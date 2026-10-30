@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Application Security (Hoffman) — Book Summary</title>
+<meta name="description" content="A plain-language walkthrough of all 37 chapters of Web Application Security: Exploitation and Countermeasures by Andrew Hoffman, with the book's figures and code examples.">
+<style>@@CSS@@</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · 2 of 2</div>
+    <h1>Web Application Security: Exploitation&nbsp;&amp;&nbsp;Countermeasures</h1>
+    <p class="subtitle">Andrew Hoffman’s second edition (2024) teaches security the way an attacker learns it — recon, offense, then defense — and only then shows you how to stop each attack. Every one of the 37 chapters is summarised below in simple terms, with the book’s diagrams and code.</p>
+    <div class="meta">
+      <span class="chip">Andrew Hoffman · O’Reilly, 2nd ed. 2024</span>
+      <span class="chip">37 chapters · 3 parts</span>
+      <span class="chip">Recon → Offense → Defense</span>
+      <span class="chip">Examples in JavaScript</span>
+    </div>
+    <nav class="booknav">
+      <a href="alice-and-bob-learn-secure-coding.html">→ The other book: Alice &amp; Bob Learn Secure Coding</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+  <a href="#tldr">The book in one page</a>
+  <a href="#ch1">1 · History of software security</a>
+  <div class="part">Part I — Recon</div>
+  <a href="#ch2">2 · Introduction to recon</a>
+  <a href="#ch3">3 · Structure of a modern app</a>
+  <a href="#ch4">4 · Finding subdomains</a>
+  <a href="#ch5">5 · API analysis</a>
+  <a href="#ch6">6 · Third-party dependencies</a>
+  <a href="#ch7">7 · Weak points in architecture</a>
+  <a href="#ch8">8 · Part I summary</a>
+  <div class="part">Part II — Offense</div>
+  <a href="#ch9">9 · Introduction to hacking</a>
+  <a href="#ch10">10 · Cross-site scripting</a>
+  <a href="#ch11">11 · CSRF</a>
+  <a href="#ch12">12 · XXE</a>
+  <a href="#ch13">13 · Injection</a>
+  <a href="#ch14">14 · Denial of service</a>
+  <a href="#ch15">15 · Attacking data &amp; objects</a>
+  <a href="#ch16">16 · Client-side attacks</a>
+  <a href="#ch17">17 · Third-party dependencies</a>
+  <a href="#ch18">18 · Business logic</a>
+  <a href="#ch19">19 · Part II summary</a>
+  <div class="part">Part III — Defense</div>
+  <a href="#ch20">20 · Securing modern web apps</a>
+  <a href="#ch21">21 · Secure architecture</a>
+  <a href="#ch22">22 · Secure configuration</a>
+  <a href="#ch23">23 · Secure user experience</a>
+  <a href="#ch24">24 · Threat modeling</a>
+  <a href="#ch25">25 · Reviewing code</a>
+  <a href="#ch26">26 · Vulnerability discovery</a>
+  <a href="#ch27">27 · Vulnerability management</a>
+  <a href="#ch28">28 · Defending against XSS</a>
+  <a href="#ch29">29 · Defending against CSRF</a>
+  <a href="#ch30">30 · Defending against XXE</a>
+  <a href="#ch31">31 · Defending against injection</a>
+  <a href="#ch32">32 · Defending against DoS</a>
+  <a href="#ch33">33 · Defending data &amp; objects</a>
+  <a href="#ch34">34 · Client-side defenses</a>
+  <a href="#ch35">35 · Securing dependencies</a>
+  <a href="#ch36">36 · Business-logic mitigations</a>
+  <a href="#ch37">37 · Part III summary</a>
+  <a href="#cheatsheet">Cheat sheet</a>
+</aside>
+
+<main>
+
+<!-- ============ TL;DR ============ -->
+<section id="tldr">
+  <h2>The book in one page</h2>
+  <p class="oneliner">You cannot defend what you do not understand. Hoffman’s method is: <b>map the application</b> (recon), <b>break it</b> (offense), then <b>build it so it cannot be broken</b> (defense) — and the last third of the book is a per-attack playbook of countermeasures.</p>
+
+  <div class="pillgrid">
+    <div class="pill"><div class="k">Part I · Recon</div><div class="v">Find every subdomain, API, endpoint, dependency and forgotten environment. Attackers see your whole “web of apps”, not just your homepage.</div></div>
+    <div class="pill"><div class="k">Part II · Offense</div><div class="v">XSS, CSRF, XXE, injection, DoS, mass assignment, IDOR, prototype pollution, clickjacking, dependency attacks, business-logic abuse.</div></div>
+    <div class="pill"><div class="k">Part III · Defense</div><div class="v">Architecture, configuration, UX, threat modeling, code review, vulnerability management — then one chapter of defenses per attack class.</div></div>
+    <div class="pill"><div class="k">The recurring theme</div><div class="v"><strong>Untrusted data must never be treated as code, instructions or authority.</strong> Nearly every attack in this book is a violation of that one rule.</div></div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>If the attacker does this…</th><th>…the defence is</th></tr></thead>
+      <tbody>
+        <tr><td>Injects script through your page (XSS)</td><td>Context-aware output encoding, sanitizers, CSP with nonces, Trusted Types</td></tr>
+        <tr><td>Makes the browser send a request for the user (CSRF)</td><td>CSRF tokens, SameSite cookies, Origin/Referer and Fetch-Metadata checks</td></tr>
+        <tr><td>Abuses an XML parser (XXE)</td><td>Disable DTDs and external entities; prefer JSON</td></tr>
+        <tr><td>Sneaks data into a query or a shell (injection)</td><td>Parameterized queries, argument arrays instead of shells, least authority</td></tr>
+        <tr><td>Burns your resources (DoS)</td><td>Rate limits, timeouts, input bounds, safe regex, scrubbing/CDN</td></tr>
+        <tr><td>Overwrites object fields, reads someone’s record (mass assignment / IDOR)</td><td>Allowlist assignable fields, check ownership on every object access</td></tr>
+        <tr><td>Poisons object prototypes or frames your site</td><td>Freeze/validate prototypes, <code>Object.create(null)</code>, frame-ancestors</td></tr>
+        <tr><td>Attacks you through a library</td><td>Dependency inventory, SCA, SRI, vendoring, patching policy</td></tr>
+        <tr><td>Finds a flaw in your business rules</td><td>Server-side pricing, state machines, idempotency, fraud analytics</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr>
+
+<section id="ch1">
+  <h2><span class="num">Chapter 1</span> · The History of Software Security</h2>
+  <p class="oneliner">Every modern attack has an ancestor: code-breaking, phone phreaking, early computer hacking — the technology changes, the mindset does not.</p>
+  <ul>
+    <li><strong>1930s — Enigma:</strong> the German cipher machine. Security depended on a secret (the rotor settings) and on users believing it was unbreakable.</li>
+    <li><strong>1940s — Bletchley Park:</strong> the bombe automated code-breaking; the lesson is that <em>scale and automation</em> beat individual cleverness.</li>
+    <li><strong>1950s — Phreaking:</strong> manipulating telephone signalling tones (the 2600 Hz whistle, blue boxes) to get free calls. Attacks happen at the layer where trust is assumed.</li>
+    <li><strong>1960s — Anti-phreaking:</strong> phone companies changed signalling — a reminder that fixing the protocol is stronger than banning the tool.</li>
+    <li><strong>1980s — Computer hacking:</strong> BBSes, modems, the first worms and the first computer-crime laws.</li>
+    <li><strong>2000s — The web:</strong> applications moved from static pages to storefronts and user data (see the Apple.com figures), and the browser became the new attack surface.</li>
+    <li><strong>2015+ — The modern era:</strong> professionalised hacking, bug bounties, ransomware, nation-state actors and supply-chain attacks; security became an engineering discipline rather than a hobby.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_1-1.jpg@@" alt="Photograph of the Enigma machine with its keyboard, lampboard and plugboard">
+      <figcaption><b>Figure 1-1 — the Enigma machine.</b> Rotors, plugboard and reflector created a huge number of possible settings. Its weakness was not the maths but the <em>operational</em> mistakes people made with it.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_1-4.jpg@@" alt="Apple.com in 1997, a simple informational website">
+      <figcaption><b>Figure 1-4 — Apple.com, July 1997.</b> The early web was a brochure: data was presented, and little of it was user-supplied, so there was little to attack.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_1-6.jpg@@" alt="YouTube homepage, an example of a Web 2.0 application full of user-generated content">
+      <figcaption><b>Figure 1-6 — YouTube, the Web 2.0 era.</b> User-generated content turned every page into a place where attacker-controlled data could be stored, reflected and executed. This is why XSS was born.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============ PART I ============ -->
+<section id="ch2">
+  <h2><span class="num">Chapter 2</span> · Introduction to Web Application Reconnaissance</h2>
+  <p class="oneliner">Before attacking (or defending) anything, build a map: what exists, where it lives, and which parts nobody is watching.</p>
+  <ul>
+    <li><strong>Information gathering</strong> — public data first: who owns the domain, what IP ranges, what technologies, what leaked in job listings or GitHub.</li>
+    <li><strong>Passive vs active</strong> — passive recon (search engines, archives, certificate logs) is invisible to the target; active recon (port scans, requests) can be detected.</li>
+    <li><strong>Web application mapping</strong> — list every host, path, parameter and API version. A real attack surface is a web of apps: marketing site, app, API, admin panel, staging, CDN, third-party services.</li>
+  </ul>
+  <div class="callout good">
+    <span class="label">Defender’s version of this chapter</span>
+    <p>You cannot protect assets you do not have in an inventory. Everything recon finds — forgotten subdomains, old API versions, staging servers with debug mode on — is something your defence must also know about.</p>
+  </div>
+</section>
+
+<section id="ch3">
+  <h2><span class="num">Chapter 3</span> · The Structure of a Modern Web Application</h2>
+  <p class="oneliner">The anatomy lesson: REST APIs, JSON, JavaScript’s quirks, SPAs, auth systems, servers, databases, GraphQL, git and CDNs.</p>
+  <ul>
+    <li><strong>Modern vs legacy</strong> — modern apps are distributed (client, API, services, CDN) and stateful in the browser; legacy apps render everything server-side. Both have trust boundaries, in different places.</li>
+    <li><strong>REST APIs</strong> — resources plus HTTP verbs; every endpoint and parameter is attack surface (the book shows Swagger-style docs as a reconnaissance goldmine).</li>
+    <li><strong>JSON</strong> — the universal data format of the modern web; parsers, not browsers, must enforce limits on its size and shape.</li>
+    <li><strong>JavaScript essentials that matter for security:</strong>
+      <ul>
+        <li><em>Variables and scope</em> — <code>var</code> is function-scoped, <code>let</code>/<code>const</code> are block-scoped; unqualified names become global (and globals can be polluted).</li>
+        <li><em>Functions and context</em> — <code>this</code> depends on how a function is called, which is why callbacks can leak objects.</li>
+        <li><em>Prototypal inheritance</em> — objects inherit from prototypes; if an attacker can write to <code>Object.prototype</code>, every object in the app changes.</li>
+        <li><em>Asynchrony</em> — callbacks and promises mean code runs out of order; race conditions and stale checks become possible.</li>
+        <li><em>The DOM</em> — the browser’s live object model of the page (Figure 3-3); writing to it with strings is where XSS happens.</li>
+      </ul>
+    </li>
+    <li><strong>SPA frameworks</strong> — React/Vue/Angular move rendering to the client, so the browser is now the application server: client-side routing, storage and rendering all matter.</li>
+    <li><strong>Authentication vs authorization</strong> — proving identity, then deciding permissions; a common bug is doing the first and forgetting the second.</li>
+    <li><strong>Web servers, server-side databases, client-side stores</strong> — Apache/Nginx and friends expose versions and default pages; databases hold the crown jewels; <code>localStorage</code>/<code>sessionStorage</code>/IndexedDB are readable by any script on the page, so never store sessions there.</li>
+    <li><strong>GraphQL</strong> — one endpoint, client-chosen queries: introspection exposes the whole schema, and queries can be nested into a denial of service.</li>
+    <li><strong>Version control (git)</strong> — history is public knowledge; secrets committed once are compromised forever.</li>
+    <li><strong>CDN and cache</strong> — they sit between users and origin, and can be abused (cache poisoning, cache deception) or misconfigured (serving stale private data).</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_3-2.jpg@@" alt="A short JavaScript code example showing variable declarations">
+      <figcaption><b>Figure 3-2 — a JavaScript example in the browser console.</b> The console is where the browser runs JavaScript — and where an attacker (or a tester) can inspect everything your page exposes: globals, storage, cookies and loaded libraries.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_3-3.jpg@@" alt="Browser developer tools showing the DOM window object and its properties">
+      <figcaption><b>Figure 3-3 — the DOM <code>window</code> object.</b> Everything the browser exposes is reachable from here: cookies, storage, location, and the functions that turn strings into code.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_3-7.jpg@@" alt="A JavaScript implementation of a GraphQL query">
+      <figcaption><b>Figure 3-7 — GraphQL in JavaScript.</b> The client decides which fields to fetch, so the server must limit depth, complexity and cost per query.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_3-8.jpg@@" alt="The GitHub website, a code collaboration platform built on git">
+      <figcaption><b>Figure 3-8 — GitHub.</b> A public code host is also a reconnaissance database: dependencies, internal URLs, and sometimes accidentally committed secrets.</figcaption>
+    </figure>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_3-9.jpg@@" alt="Diagram of a CDN distributing cached content from the origin server to users">
+    <figcaption><b>Figure 3-9 — CDNs.</b> The CDN holds copies of your content all over the world. Great for speed and DDoS absorption — but whatever it caches, and for how long, becomes part of your security model.</figcaption>
+  </figure>
+</section>
+
+<section id="ch4">
+  <h2><span class="num">Chapter 4</span> · Finding Subdomains</h2>
+  <p class="oneliner">The homepage is the front door; the interesting bugs live in the side doors — <code>dev.</code>, <code>staging.</code>, <code>api.</code>, <code>old.</code></p>
+  <ul>
+    <li><strong>Multiple applications per domain</strong> — one brand owns a “web” of hosts: the app, the marketing site, an API, admin tools, mobile endpoints. Each is a separate application with its own security level.</li>
+    <li><strong>The browser’s built-in network tools</strong> — the Network tab shows every request and the domain it went to (Figures 4-2, 4-3). Asynchronous calls reveal internal APIs that are never linked in the UI.</li>
+    <li><strong>Public records, part 1 — search engine caches</strong> — operators such as <code>site:mega-bank.com</code> combined with <code>-inurl:www -inurl:mobile</code> surface pages and subdomains that were never advertised (Figure 4-4).</li>
+    <li><strong>Public records, part 2 — accidental archives</strong> — Archive.org keeps snapshots going back decades (Figure 4-5). Viewing the source of an old snapshot often reveals subdomains and endpoints that have since been removed from the live app.</li>
+    <li><strong>Public records, part 3 — social snapshots</strong> — marketing campaigns, support links and job posts on social platforms leak subdomains; the platforms’ search APIs (Figure 4-6) can be queried for links to the target domain.</li>
+    <li><strong>Zone transfer attacks</strong> — a misconfigured DNS server will answer a “zone transfer” request from anyone, handing over its entire list of records — hosts that are not linked from the web app at all.</li>
+    <li><strong>Brute-forcing subdomains</strong> — try generated name combinations and see which ones resolve.</li>
+    <li><strong>Dictionary attacks</strong> — the efficient version of the same idea: feed a wordlist (dnscan’s top 10,000 subdomains starts with <code>www</code>, <code>mail</code>, <code>ftp</code>, <code>dev</code>, <code>test</code>, <code>admin</code>…) into a script that resolves each candidate. Start with the dictionary, then brute-force what it missed.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_4-1.jpg@@" alt="Diagram of a simple subdomain web for mega-bank.com with many related hosts">
+      <figcaption><b>Figure 4-1 — the “subdomain web”.</b> A single brand owns dozens of hosts. Every extra node is extra attack surface, and usually a different team with a different security level.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_4-4.jpg@@" alt="Google search using the site: operator to list subdomains">
+      <figcaption><b>Figure 4-4 — search operators.</b> <code>site:</code> plus a negative term lists pages a company did not intend to advertise — free reconnaissance, no tools required.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch5">
+  <h2><span class="num">Chapter 5</span> · API Analysis</h2>
+  <p class="oneliner">APIs are where modern applications really live — and they are documented, versioned and often far less protected than the UI in front of them.</p>
+  <ul>
+    <li><strong>Endpoint discovery</strong> — reuse the same techniques as subdomain hunting: walk the app with the Network tab open, then brute-force and dictionary-attack common paths (<code>/api/</code>, <code>/v1/</code>, <code>/internal/</code>).</li>
+    <li><strong>Authentication mechanisms</strong> — work out how each endpoint authenticates: cookies, bearer tokens, API keys, OAuth 2.0 flows. The auth mechanism tells you what an attacker would need to steal.</li>
+    <li><strong>Endpoint shapes</strong> — figure out the payload each endpoint expects. <em>Common shapes</em> follow public specs (an OAuth 2.0 authorization endpoint expects <code>response_type</code>, <code>client_id</code>, <code>scope</code>, <code>state</code>, <code>redirect_uri</code>), so the docs tell you the shape.</li>
+    <li><strong>Application-specific shapes</strong> — when no spec exists, infer the shape from what the API returns and from the client code that calls it.</li>
+    <li><strong>Versioning and hidden methods</strong> — older API versions and unexpected HTTP verbs are usually the least protected part of the surface.</li>
+    <li>Check GraphQL introspection: it can publish the whole schema, including mutations you were never meant to call.</li>
+  </ul>
+</section>
+
+<section id="ch6">
+  <h2><span class="num">Chapter 6</span> · Identifying Third-Party Dependencies</h2>
+  <p class="oneliner">Fingerprint what the app is built from: the library and its version is usually the shortest path to a known exploit.</p>
+  <ul>
+    <li><strong>Detecting client-side frameworks</strong> — SPA frameworks, JavaScript libraries and even CSS libraries leave signatures: global variables, version strings in the console (Figures 6-1, 6-2), asset paths and HTML structure.</li>
+    <li><strong>Detecting server-side frameworks</strong> — default error pages, cookie names, header values and URL patterns give the server stack and often its version (the Ruby on Rails example, Figures 6-3, 6-4).</li>
+    <li>HTTP response headers (<code>Server</code>, <code>X-Powered-By</code>) tell you the stack — which is exactly why you should strip them. Obscurity is a weak control, but it is free.</li>
+    <li>Once you know the library and version, CVE databases tell you what is already exploitable — no guesswork required.</li>
+  </ul>
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_6-1.jpg@@" alt="Console output detecting the EmberJS version used by a site">
+      <figcaption><b>Figure 6-1 — detecting the EmberJS version.</b> A single console command reveals the framework version; the CVE database does the rest.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_6-4.jpg@@" alt="The default Ruby on Rails 404 error page">
+      <figcaption><b>Figure 6-4 — Rails’ default 404 page.</b> Default pages are fingerprints: they prove the framework, and often the version, without a single exploit.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch7">
+  <h2><span class="num">Chapter 7</span> · Identifying Weak Points in Application Architecture</h2>
+  <p class="oneliner">The weakest link is rarely the code you wrote — it is the box you forgot, the cache you trusted, or the environment that reached production.</p>
+  <ul>
+    <li><strong>Secure vs insecure architecture signals</strong> — compare two apps that do the same thing: the insecure one has no rejection on write, no filtering on read, no encoding on display. Several small findings in the same area usually point at a weak architecture, not one bad method.</li>
+    <li><strong>Multiple layers of security</strong> — the same vulnerability can be prevented at several layers. In the book’s messaging example the layers are: <em>API POST → database write → database read → API GET → client read</em>. If only the first layer sanitizes, a new write path silently reopens the hole.</li>
+    <li><strong>Adoption and reinvention</strong> — teams often rebuild what already exists (to avoid licences, add features, or because it is fun). Hand-rolled crypto, auth or parsers are a classic architecture-level risk.</li>
+    <li><strong>Edge components</strong> — CDN, WAF, load balancers and caches: misconfiguration here affects everything behind them.</li>
+    <li><strong>Storage and environments</strong> — public buckets, unprotected backups, staging copies with production data, dev servers with debug mode on, CI systems holding deployment keys.</li>
+    <li><strong>Trust assumptions between services</strong> — “internal” traffic that is never authenticated.</li>
+  </ul>
+</section>
+
+<section id="ch8">
+  <h2><span class="num">Chapter 8</span> · Part I Summary</h2>
+  <p class="oneliner">Recon turns a single URL into a full map of hosts, APIs, dependencies and weak architecture — and every item on that map is a to-do for your defence.</p>
+  <div class="callout">
+    <span class="label">Remember</span>
+    <p>Attackers do not start with exploits; they start with <em>inventory</em>. Your defence should begin at the same place: asset inventory, dependency inventory, and an honest list of what is exposed to the internet.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============ PART II ============ -->
+<section id="ch9">
+  <h2><span class="num">Chapter 9</span> · Introduction to Hacking Web Applications</h2>
+  <p class="oneliner">The hacker mindset: think in terms of <em>what the developer assumed</em> and then do the opposite — carefully, and legally.</p>
+  <ul>
+    <li>Look for missing checks, not broken syntax. Most findings are an assumption (“users will only click this button”) that turns out to be false.</li>
+    <li>Chain small issues: an information leak plus an IDOR plus an XSS can become full account takeover.</li>
+    <li>Recon is not “part before the attack”; it continues during the attack, because every response teaches you something.</li>
+    <li>Ethics and permission come first: scope, authorisation, and responsible reporting.</li>
+  </ul>
+</section>
+
+<section id="ch10">
+  <h2><span class="num">Chapter 10</span> · Cross-Site Scripting (XSS)</h2>
+  <p class="oneliner">XSS is what happens when the browser mistakes your data for your program: an attacker’s JavaScript runs with the same powers as yours, inside a victim’s session.</p>
+
+  <h3>The four flavours</h3>
+  <ul>
+    <li><strong>Stored XSS</strong> — the payload is saved in the database (a comment, profile, filename) and executes for everyone who views it. The most dangerous kind.</li>
+    <li><strong>Reflected XSS</strong> — the payload comes back in the same response (a search term printed on the page); the attacker must trick the victim into opening a crafted link.</li>
+    <li><strong>DOM-based XSS</strong> — the server never sees the payload; client-side code moves data from a <em>source</em> (URL, storage, <code>postMessage</code>) into a dangerous <em>sink</em> (<code>innerHTML</code>, <code>eval</code>).</li>
+    <li><strong>Mutation-based XSS</strong> — the browser’s own parser “fixes” malformed HTML in a way the sanitizer did not predict, resurrecting a script.</li>
+  </ul>
+
+  <p>Discovery comes from putting test strings into every input and watching whether they come back unescaped. Filter bypassing comes from encoding tricks, unusual tags, event handlers and context switches — which is why the book keeps insisting that filtering is not the defence; <em>encoding and CSP</em> are.</p>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_10-1.jpg@@" alt="Diagram of stored XSS: a malicious script is saved to the database and served to other users">
+      <figcaption><b>Figure 10-1 — stored XSS, step by step.</b> User #1 submits a form → the API stores the data in the database → User #2 requests the data → the API returns it to User #2’s client → it is injected into the DOM → the script inside the data is executed on User #2’s device. The attacker never needs to contact the victim.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_10-2.jpg@@" alt="Diagram of reflected XSS: a crafted link sends the payload back in the response">
+      <figcaption><b>Figure 10-2 — reflected XSS.</b> The payload travels in the request (usually the URL) and is echoed straight back into the page. The victim must be persuaded to click.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_10-3.jpg@@" alt="Diagram of DOM-based XSS where browser-side code moves data into a dangerous sink">
+      <figcaption><b>Figure 10-3 — DOM-based XSS.</b> The server is innocent: the page’s own JavaScript takes data from a source and writes it into an HTML sink without encoding.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_10-4.jpg@@" alt="The DOMPurify library page, an industry-standard XSS sanitizer">
+      <figcaption><b>Figure 10-4 — DOMPurify.</b> When you truly must render user HTML, run it through a maintained sanitizer built for the browser’s parser, not a regex.</figcaption>
+    </figure>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">XSS: the one-line difference that matters</span><span class="tag bad">vulnerable → safe</span></div>
+<pre><code>// 1. Any script gets to execute — user data became code
+document.getElementById("out").innerHTML = userInput;
+
+// 2. Text stays text
+document.getElementById("out").textContent = userInput;
+
+// 3. If HTML really is required, sanitize first
+document.getElementById("out").innerHTML = DOMPurify.sanitize(userInput);</code></pre>
+  </div>
+</section>
+
+<section id="ch11">
+  <h2><span class="num">Chapter 11</span> · Cross-Site Request Forgery (CSRF)</h2>
+  <p class="oneliner">CSRF does not steal the session — it borrows it. The victim’s browser is tricked into sending a request the user never intended.</p>
+  <ul>
+    <li><strong>Query parameter tampering</strong> — a state-changing <code>GET</code> (<code>/transfer?to=evil&amp;amount=100</code>) can be triggered by a link or an <code>&lt;img&gt;</code>.</li>
+    <li><strong>Alternate GET payloads</strong> — images, iframes, script tags: anything the browser fetches automatically (Figure 11-2).</li>
+    <li><strong>CSRF against POST endpoints</strong> — a hidden auto-submitting form sends a “legitimate” POST with the user’s cookies (Figure 11-3).</li>
+    <li><strong>Bypassing weak defences</strong> — checking the <code>Referer</code> is often bypassable with <code>data:</code>/<code>javascript:</code> URLs or when the header is stripped; a token that is not validated, is reused, or is not tied to the session is no defence.</li>
+    <li>The core condition: the action is predictable, cookie-authenticated, and there is no unforgeable per-request secret.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_11-1.jpg@@" alt="Diagram of CSRF via GET where a malicious link causes a state change">
+      <figcaption><b>Figure 11-1 — CSRF via GET.</b> A malicious link is spread; clicking it makes the user’s browser perform a state change on a site where they are logged in.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_11-2.jpg@@" alt="Diagram of CSRF via an img tag posting to a target application">
+      <figcaption><b>Figure 11-2 — CSRF via <code>&lt;img&gt;</code>.</b> An image tag in an attacker’s page silently requests your endpoint. The user sees nothing.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_11-3.jpg@@" alt="Diagram of CSRF against a POST endpoint using an auto-submitting form">
+      <figcaption><b>Figure 11-3 — CSRF against POST.</b> A hidden form is auto-submitted to the target; the browser attaches the victim’s cookies because the request comes from the victim’s machine.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch12">
+  <h2><span class="num">Chapter 12</span> · XML External Entity (XXE)</h2>
+  <p class="oneliner">XML lets a document define its own “entities”. If the parser resolves external ones, your file becomes a way to read files from — and send data out of — the server.</p>
+  <ul>
+    <li><strong>Direct XXE</strong> — the attacker’s request contains a DTD that loads a local file (e.g. <code>/etc/passwd</code>) and the response leaks it.</li>
+    <li><strong>Indirect XXE</strong> — the malicious DTD lives on the attacker’s server, so the payload is tiny and harder to detect.</li>
+    <li><strong>Out-of-band exfiltration</strong> — when nothing is reflected, data is pushed out via a parameterised entity pointing at an attacker-controlled host.</li>
+    <li><strong>Escalation</strong> — XXE is not just file read: it can reach internal services (SSRF), and the book walks an <em>account-takeover workflow</em> built from it.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_12-1.jpg@@" alt="Diagram of direct XXE where a malicious DTD in the request reads a local file">
+      <figcaption><b>Figure 12-1 — direct XXE.</b> The entity definition and the offending DTD arrive in the same request, so the parser reads and returns a file the attacker could never access directly.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_12-2.jpg@@" alt="Diagram of indirect XXE where the DTD is hosted on an attacker server">
+      <figcaption><b>Figure 12-2 — indirect XXE.</b> The request points to a DTD hosted elsewhere, which keeps the request small and hides the intent from simple filters.</figcaption>
+    </figure>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">XXE: three lines that make it impossible (Java shown; every parser has an equivalent)</span><span class="tag good">safe</span></div>
+<pre><code>DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+f.setFeature("http://xml.org/sax/features/external-general-entities", false);
+f.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+f.setXIncludeAware(false);
+f.setExpandEntityReferences(false);
+
+// better still: if the API can accept JSON, do not accept XML at all.</code></pre>
+  </div>
+</section>
+
+<section id="ch13">
+  <h2><span class="num">Chapter 13</span> · Injection</h2>
+  <p class="oneliner">Injection is one idea in many costumes: user data enters an interpreter and is interpreted as instruction — SQL, code, or shell commands.</p>
+  <ul>
+    <li><strong>SQL injection</strong> — the classic: string concatenation turns a login form into “return every row”. The book demonstrates old-school PHP/MySQL and how to build payloads for APIs.</li>
+    <li><strong>Code injection</strong> — user input reaching <code>eval</code>, <code>Function</code>, templates, or a deserializer: data becomes program.</li>
+    <li><strong>Command injection</strong> — input concatenated into a shell command; a semicolon is enough.</li>
+    <li><strong>Exfiltration techniques</strong> — union queries, error-based leaks, blind/boolean inference, time-based delays, out-of-band channels.</li>
+    <li><strong>Bypassing defences</strong> — encoding, comments, alternative syntax and case tricks defeat naive blocklists; only parameterisation and argument arrays reliably stop injection.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_13-1.jpg@@" alt="Diagram of SQL injection showing attacker input altering a database query">
+      <figcaption><b>Figure 13-1 — SQL injection.</b> The attacker’s string changes the structure of the query, so the database runs the attacker’s logic instead of the developer’s.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_13-2.jpg@@" alt="Diagram of CLI injection where input is passed into a command-line tool">
+      <figcaption><b>Figure 13-2 — CLI injection.</b> User data passed to a command-line program is interpreted as extra arguments or extra commands.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_13-3.jpg@@" alt="Diagram of command injection through a shell">
+      <figcaption><b>Figure 13-3 — command injection.</b> When a shell is involved, characters like <code>;</code>, <code>|</code> and <code>&amp;&amp;</code> let the attacker chain their own commands.</figcaption>
+    </figure>
+  </div>
+
+  <div class="figrow">
+    <div class="code">
+      <div class="bar"><span class="title">SQL injection (string-built query)</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const q = "SELECT id FROM users " +
+          "WHERE email='" + email +
+          "' AND pass='" + pass + "'";
+// email = "' OR '1'='1"  →  every user matches</code></pre>
+    </div>
+    <div class="code">
+      <div class="bar"><span class="title">Parameterized query</span><span class="tag good">safe</span></div>
+<pre><code>const q = "SELECT id FROM users " +
+          "WHERE email=? AND pass=?";
+db.query(q, [email, pass]);   // values are
+                              // never parsed as SQL</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="ch14">
+  <h2><span class="num">Chapter 14</span> · Denial of Service</h2>
+  <p class="oneliner">Availability is part of security: if the attacker can make the app unusable, that is a successful attack — no data theft required.</p>
+  <ul>
+    <li><strong>Regex DoS (ReDoS)</strong> — a cleverly crafted string makes a badly written regular expression take exponential time; one request can pin a CPU core.</li>
+    <li><strong>Logical DoS</strong> — abusing normal features: giant file uploads, deeply nested JSON or GraphQL, huge page sizes, expensive searches, unbounded loops.</li>
+    <li><strong>DDoS</strong> — many machines; the attacker’s traffic looks like a crowd, so per-IP rate limiting is not enough.</li>
+    <li><strong>Advanced DoS</strong> — slowloris-style slow requests, connection exhaustion, amplification attacks.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_14-1.jpg@@" alt="Diagram showing server resources drained by a single illegitimate user">
+      <figcaption><b>Figure 14-1 — single-source DoS.</b> One user (or one well-crafted request) consumes the server’s CPU, memory or connections so that legitimate users cannot be served.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_14-2.jpg@@" alt="Diagram showing distributed denial of service with many attacking machines">
+      <figcaption><b>Figure 14-2 — distributed DoS.</b> A botnet multiplies the same effect; the defence shifts from the application to the edge — scrubbing, CDN absorption, blackholing, autoscaling.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch15">
+  <h2><span class="num">Chapter 15</span> · Attacking Data and Objects</h2>
+  <p class="oneliner">Three attacks that go after your <em>model</em> of the data rather than your syntax: mass assignment, IDOR and unsafe serialization.</p>
+  <ul>
+    <li><strong>Mass assignment</strong> — the API blindly copies every JSON field into a database object, so the attacker adds <code>"isAdmin": true</code> or <code>"balance": 999999</code>.</li>
+    <li><strong>Insecure Direct Object Reference (IDOR)</strong> — the endpoint trusts the identifier in the request (<code>/invoice?id=1001</code> → try <code>1002</code>) without checking that this user owns that object.</li>
+    <li><strong>Serialization attacks</strong> — the server turns attacker-supplied bytes into live objects, letting the attacker choose which class gets instantiated (and often execute code).</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Mass assignment and IDOR, side by side</span><span class="tag bad">vulnerable</span></div>
+<pre><code>// mass assignment: every field the client sends is trusted
+Object.assign(user, req.body);           // includes { "isAdmin": true }
+
+// IDOR: the object id is trusted, ownership never checked
+app.get("/invoice", (req, res) =&gt;
+  db.invoices.findById(req.query.id).then(res.json));
+  // ?id=1002 returns someone else's invoice</code></pre>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">The same two endpoints, fixed</span><span class="tag good">safe</span></div>
+<pre><code>// allowlist the fields a client may set
+const { name, email } = req.body;
+db.users.update(req.user.id, { name, email });
+
+// authorize the object, not just the route
+const inv = await db.invoices.findById(req.query.id);
+if (inv.ownerId !== req.user.id) return res.status(403).end();</code></pre>
+  </div>
+</section>
+
+<section id="ch16">
+  <h2><span class="num">Chapter 16</span> · Client-Side Attacks</h2>
+  <p class="oneliner">Attacks that live entirely in the browser: poison the prototype, frame the page, or swap the tab underneath the user.</p>
+  <ul>
+    <li><strong>Prototype pollution</strong> — a recursive merge or a JSON parse writes <code>__proto__</code>, so <em>every</em> object in the app suddenly has attacker-chosen properties (often escalating to XSS or auth bypass).</li>
+    <li><strong>Clickjacking</strong> — your site is loaded in a transparent iframe over a decoy page, so clicks meant for the decoy hit your real buttons.</li>
+    <li><strong>Tabnabbing / reverse tabnabbing</strong> — a link with <code>target="_blank"</code> without <code>rel="noopener"</code> gives the new page a handle on your tab, which it can silently replace with a phishing page.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Prototype pollution: how one merge ruins everything</span><span class="tag bad">vulnerable</span></div>
+<pre><code>function merge(target, source) {
+  for (const k in source) {
+    if (typeof source[k] === "object") merge(target[k], source[k]);
+    else target[k] = source[k];
+  }
+}
+merge({}, JSON.parse('{"__proto__":{"isAdmin":true}}'));
+
+({}).isAdmin;   // true — for every object in the process</code></pre>
+  </div>
+</section>
+
+<section id="ch17">
+  <h2><span class="num">Chapter 17</span> · Exploiting Third-Party Dependencies</h2>
+  <p class="oneliner">You did not write most of your application — and most of the code that reaches production comes from somewhere else.</p>
+  <ul>
+    <li><strong>Methods of integration</strong> — direct dependency, transitive dependency, CDN-hosted script, embedded widget, container image.</li>
+    <li><strong>Package managers</strong> — npm, Maven, PyPI and friends: typosquatting, malicious packages, dependency confusion, compromised maintainer accounts.</li>
+    <li><strong>CVE / NVD databases</strong> — the public catalogue of known vulnerabilities scored by severity; matching your versions against it is step one.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_17-3.jpg@@" alt="The npm registry website, a large JavaScript package manager">
+      <figcaption><b>Figure 17-3 — npm.</b> The largest JavaScript package registry: enormous convenience, and an enormous supply chain to trust. Anyone can publish a package with a name one letter off from a popular one.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_17-5.jpg@@" alt="The NVD database of known vulnerabilities with severity scores">
+      <figcaption><b>Figure 17-5 — NVD.</b> The National Vulnerability Database lists known CVEs with CVSS severity — the reference you check every dependency against.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch18">
+  <h2><span class="num">Chapter 18</span> · Business Logic Vulnerabilities</h2>
+  <p class="oneliner">No scanner will find these: the code works exactly as written, but the <em>rules</em> can be bent. This is where real money is lost.</p>
+  <ul>
+    <li><strong>Custom maths</strong> — negative quantities, rounding errors, percentages applied twice, “free item” thresholds reached with refunds.</li>
+    <li><strong>Programmed side effects</strong> — each step is fine, but the order or repetition of steps produces an unintended outcome (apply coupon, cancel order, re-apply coupon).</li>
+    <li><strong>Quasi-cash attacks</strong> — abusing refunds, gift cards and credits so that value can be converted into money.</li>
+    <li><strong>Vulnerable standards and conventions</strong> — assuming a payment, email or shipping partner enforces something they do not.</li>
+    <li><strong>Exploiting them</strong> — replaying a whole workflow, skipping steps, or running two workflows in parallel so each check sees a consistent world (a race condition at business level).</li>
+  </ul>
+  <div class="callout warn">
+    <span class="label">Why these matter most</span>
+    <p>A framework and a WAF fix the “known” categories. Business logic has no library to import — it needs threat modeling, misuse cases and monitoring of real behaviour (Chapter 36).</p>
+  </div>
+</section>
+
+<section id="ch19">
+  <h2><span class="num">Chapter 19</span> · Part II Summary</h2>
+  <p class="oneliner">Ten attack families, one pattern: the application trusted something it should have verified — data, an identifier, a field, a token, a dependency, or a business rule.</p>
+</section>
+
+<hr>
+
+<!-- ============ PART III ============ -->
+<section id="ch20">
+  <h2><span class="num">Chapter 20</span> · Securing Modern Web Applications</h2>
+  <p class="oneliner">Defence is a programme, not a patch: architecture, code review, discovery, analysis, management, regression testing and mitigation.</p>
+  <ul>
+    <li><strong>Defensive architecture</strong> — design so that a single mistake cannot become a breach (segmentation, least privilege, isolation).</li>
+    <li><strong>Comprehensive code reviews</strong> — human review plus automation, focused on what changed and on the risky parts.</li>
+    <li><strong>Vulnerability discovery → analysis → management</strong> — find them, understand them, rank them, fix them, verify the fix.</li>
+    <li><strong>Regression testing</strong> — a fixed bug must stay fixed; add a test for every vulnerability you close.</li>
+    <li><strong>Mitigation strategies</strong> — remove the feature, fix the root cause, add a compensating control, or accept the risk with eyes open (in that preference order).</li>
+    <li><strong>Use your recon and offence knowledge</strong> — the same map and the same techniques, applied by you before someone else applies them.</li>
+  </ul>
+</section>
+
+<section id="ch21">
+  <h2><span class="num">Chapter 21</span> · Secure Application Architecture</h2>
+  <p class="oneliner">Security decisions that are cheapest at design time: how users authenticate, what data is sensitive, what third parties see, and how much you trust the network.</p>
+  <ul>
+    <li><strong>Analyse feature requirements for security impact</strong> — every feature is a new way in; ask what it lets an attacker do.</li>
+    <li><strong>Authentication and authorization</strong> — TLS everywhere, strong password storage, MFA (Figure 21-2), least privilege, and authorization checks that follow the data, not just the route.</li>
+    <li><strong>PII and financial data</strong> — minimise collection, encrypt, tokenize, and never let it spread into logs, analytics or test environments.</li>
+    <li><strong>Search engines and data stores</strong> — an Elasticsearch instance with no auth is a classic breach (Figure 21-3); anything with a query interface is an asset to protect.</li>
+    <li><strong>Zero Trust</strong> — every request is authenticated and authorized, even from inside the network; identity is the new perimeter.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_21-2.jpg@@" alt="Google Authenticator app showing time-based one-time passwords">
+      <figcaption><b>Figure 21-2 — MFA in practice.</b> A password alone is a single guessable secret. A second factor turns a stolen password into a dead end.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_21-3.jpg@@" alt="The Elasticsearch search engine interface">
+      <figcaption><b>Figure 21-3 — Elasticsearch.</b> A powerful search engine that has repeatedly been found exposed with no authentication, handing attackers every document in the index. Defaults are security decisions.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch22">
+  <h2><span class="num">Chapter 22</span> · Secure Application Configuration</h2>
+  <p class="oneliner">The browser is controlled by headers, cookies and policies — this chapter is the checklist that makes the browser fight on your side.</p>
+  <ul>
+    <li><strong>Content Security Policy</strong> — declare the allowed sources for scripts, styles, images and frames; prefer nonces or hashes over <code>unsafe-inline</code>; add <code>object-src 'none'</code> and <code>base-uri 'none'</code>.</li>
+    <li><strong>CORS</strong> — be explicit. <code>Access-Control-Allow-Origin: *</code> together with credentials, or reflecting any <code>Origin</code>, hands your API to every website.</li>
+    <li><strong>Headers</strong> — HSTS, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code>, <code>Permissions-Policy</code>; remove version banners.</li>
+    <li><strong>Cookies</strong> — <code>Secure</code>, <code>HttpOnly</code>, <code>SameSite</code>, tight <code>Path</code> and <code>Domain</code>, short lifetime.</li>
+    <li><strong>Framing and sandboxing</strong> — <code>frame-ancestors</code> / <code>X-Frame-Options</code> against clickjacking, and the <code>sandbox</code> attribute for untrusted content.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">CORS: the difference between a policy and an open door</span><span class="tag bad">vulnerable</span></div>
+<pre><code>// reflects any origin AND allows credentials
+res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+res.setHeader("Access-Control-Allow-Credentials", "true");</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">An allowlist instead</span><span class="tag good">safe</span></div>
+<pre><code>const allowed = new Set(["https://app.example.com"]);
+if (allowed.has(req.headers.origin)) {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Vary", "Origin");
+}</code></pre>
+  </div>
+</section>
+
+<section id="ch23">
+  <h2><span class="num">Chapter 23</span> · Secure User Experience</h2>
+  <p class="oneliner">Your error messages, timing and screens are an information channel: they tell an attacker which accounts exist, which features are enabled, and what the system is built from.</p>
+  <ul>
+    <li><strong>Information disclosure and enumeration</strong> — “user not found” versus “wrong password”, different response times, different status codes, and registration forms that reveal existing accounts.</li>
+    <li><strong>Generic responses</strong> — one message for all authentication failures, with the real reason only in the logs.</li>
+    <li><strong>UX best practices</strong> — clear, consistent security flows (login, reset, MFA) that do not tempt users into workarounds; consistent naming so users can recognise genuine pages (Figure 23-1 uses React’s naming patterns as the example).</li>
+    <li><strong>Don’t design leaks in</strong> — verbose errors, debug pages, exposed API docs and “helpful” autocomplete can all be turned against you.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_23-1.jpg@@" alt="React source code showing consistent naming conventions used by the library">
+    <figcaption><b>Figure 23-1 — consistent naming.</b> Predictable, consistent conventions in your UI and API help users (and reviewers) spot something that does not belong — a small but real anti-phishing control.</figcaption>
+  </figure>
+</section>
+
+<section id="ch24">
+  <h2><span class="num">Chapter 24</span> · Threat Modeling Applications</h2>
+  <p class="oneliner">A structured conversation about how your specific application could be attacked — done before the code exists, and repeated when it changes.</p>
+  <ul>
+    <li><strong>Design an effective model</strong> — scope, assets, actors, entry points, trust boundaries, and a list of threats with owners.</li>
+    <li><strong>By example</strong> — the book walks a real application end to end, asking at each step: what data is this, who can reach it, what happens if it is wrong or malicious?</li>
+    <li><strong>Output must be actionable</strong> — each threat gets a mitigation, an owner and a deadline; otherwise it is just a document nobody reads.</li>
+    <li><strong>Re-run it</strong> on every architectural change, new integration and new feature.</li>
+  </ul>
+</section>
+
+<section id="ch25">
+  <h2><span class="num">Chapter 25</span> · Reviewing Code for Security</h2>
+  <p class="oneliner">You cannot read everything, so read the right things: entry points, trust boundaries, auth code, and the places where data becomes code.</p>
+  <ul>
+    <li><strong>Where to start</strong> — new/changed code, public endpoints, authentication and authorization, file handling, database access, and anything that handles money or secrets.</li>
+    <li><strong>Archetypical vulnerabilities vs business logic</strong> — pattern-based bugs (injection, XSS) are findable with tools and checklists; logic bugs need the product’s rules in your head.</li>
+    <li><strong>Anti-patterns to grep for</strong> — <code>eval</code>, <code>innerHTML</code>, string-built SQL, <code>shell=True</code>, <code>pickle</code>, <code>verify=False</code>, <code>Access-Control-Allow-Origin: *</code>, hard-coded secrets, commented-out auth checks.</li>
+    <li><strong>Review the diff, not just the file</strong> — and require a second reviewer for security-sensitive changes (git hosts make this natural, Figure 25-1).</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_25-1.jpg@@" alt="A GitHub pull request review page">
+    <figcaption><b>Figure 25-1 — pull-request review.</b> The code host is where review actually happens; make security review part of the same pull request rather than a separate audit later.</figcaption>
+  </figure>
+</section>
+
+<section id="ch26">
+  <h2><span class="num">Chapter 26</span> · Vulnerability Discovery</h2>
+  <p class="oneliner">Finding your own bugs is cheaper than reading about them in a breach report: automate the boring parts, then add humans.</p>
+  <ul>
+    <li><strong>Security automation</strong> — SAST (source), DAST (running app), IAST (instrumented), SCA (dependencies), secret scanning and fuzzing; the book uses Jest (Figure 26-1) as an example of testing integrated into the workflow.</li>
+    <li><strong>Responsible disclosure</strong> — give researchers a way to report; a security.txt and a stated policy are cheaper than a public Twitter thread.</li>
+    <li><strong>Bug bounty programmes</strong> — HackerOne-style platforms (Figure 26-2) bring many eyes, but need triage capacity and a reputation for paying.</li>
+    <li><strong>Third-party penetration testing</strong> — an independent, time-boxed attack by experts; best value after the basics are done.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_26-1.jpg@@" alt="The Jest JavaScript testing library website">
+      <figcaption><b>Figure 26-1 — Jest.</b> Automated tests are the cheapest security regression net: write a test for each vulnerability you fix.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_26-2.jpg@@" alt="The HackerOne bug bounty platform website">
+      <figcaption><b>Figure 26-2 — HackerOne.</b> A bug bounty platform turns the research community into an extension of your security team — provided you can triage fast and pay fairly.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="ch27">
+  <h2><span class="num">Chapter 27</span> · Vulnerability Management</h2>
+  <p class="oneliner">A vulnerability you cannot rank, reproduce and assign is a vulnerability you will not fix.</p>
+  <ul>
+    <li><strong>Reproduce</strong> — a finding you cannot reproduce is a rumour. Capture exact steps, request, response and impact.</li>
+    <li><strong>Rank with CVSS</strong> — base score (intrinsic severity: attack vector, complexity, privileges, user interaction, and impact on C/I/A), temporal score (exploit maturity, remediation level, confidence), environmental score (how much it matters to <em>your</em> system).</li>
+    <li><strong>Beyond scoring</strong> — add business context (is this the payment service or a brochure page?), asset criticality, and existing compensating controls.</li>
+    <li><strong>Then manage</strong> — assign an owner, set a deadline by severity, track to closure, and re-test the fix.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_27-1.jpg@@" alt="The CVSS score calculator interface">
+      <figcaption><b>Figure 27-1 — CVSS.</b> A standard, shared language for severity, so that a critical finding means the same thing to a developer and to a manager.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_27-2.jpg@@" alt="Diagram showing the CVSS base score metrics">
+      <figcaption><b>Figure 27-2 — the base score.</b> Intrinsic properties of the vulnerability: how it is reached, what it needs, and what it damages.</figcaption>
+    </figure>
+  </div>
+  <div class="callout">
+    <span class="label">The two extra dimensions</span>
+    <p><strong>Temporal</strong> (Figure 27-3) asks: is there a working exploit yet, and is there a fix? <strong>Environmental</strong> (Figure 27-4) asks: how much does this specific system matter to us? Two identical CVEs can deserve very different urgency in two different companies.</p>
+  </div>
+</section>
+
+<section id="ch28">
+  <h2><span class="num">Chapter 28</span> · Defending Against XSS Attacks</h2>
+  <p class="oneliner">Stop treating user data as HTML. Encode on output, sanitize when HTML is genuinely required, and let CSP catch what you missed.</p>
+  <ul>
+    <li><strong>Coding best practices</strong> — encode for the exact context (HTML body, attribute, JavaScript, CSS, URL), prefer framework auto-escaping, avoid <code>innerHTML</code>/<code>eval</code>, and never build DOM from strings.</li>
+    <li><strong>Sanitizing input</strong> — use a maintained parser-based sanitizer (DOMPurify) with a strict allowlist of tags and attributes; never a regex.</li>
+    <li><strong>CSS XSS and mutation XSS</strong> — old browsers and clever markup can revive scripts; keep sanitizers updated and keep CSP as the backstop.</li>
+    <li><strong>CSP for XSS prevention</strong> — nonce- or hash-based <code>script-src</code>, no <code>unsafe-inline</code>, <code>object-src 'none'</code>, and Trusted Types in browsers that support them.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_28-1.jpg@@" alt="Diagram of user-supplied text being encoded before it is rendered into HTML">
+    <figcaption><b>Figure 28-1 — the XSS fix in one picture.</b> User-supplied text reaches the page only after the correct contextual encoding, so the browser renders characters instead of executing them.</figcaption>
+  </figure>
+
+  <div class="code">
+    <div class="bar"><span class="title">Encode for the context you are actually in</span><span class="tag good">safe</span></div>
+<pre><code>// HTML body      →  &lt;  becomes &amp;lt;
+el.textContent = data;
+
+// HTML attribute →  quotes must be encoded too
+el.setAttribute("title", data);      // not  '&lt;div title="' + data + '"&gt;'
+
+// URL component  →  percent-encode
+location.href = "/search?q=" + encodeURIComponent(q);
+
+// JavaScript     →  JSON-encode, never string-concatenate
+&lt;script&gt;const cfg = JSON.parse('&lt;%= jsonEncode(config) %&gt;');&lt;/script&gt;</code></pre>
+  </div>
+</section>
+
+<section id="ch29">
+  <h2><span class="num">Chapter 29</span> · Defending Against CSRF Attacks</h2>
+  <p class="oneliner">Make each state-changing request carry something an attacker’s page cannot know or guess.</p>
+  <ul>
+    <li><strong>Header verification</strong> — check <code>Origin</code>, <code>Referer</code> and the <code>Sec-Fetch-Site</code> metadata headers; reject cross-site state changes.</li>
+    <li><strong>CSRF tokens</strong> — a random, per-session (or per-request) token, validated server-side on every state-changing request, sent in a header or a hidden field.</li>
+    <li><strong>SameSite cookies</strong> — <code>Lax</code> or <code>Strict</code> blocks most cross-site sending; combine with tokens for defence in depth.</li>
+    <li><strong>Design rules</strong> — never use GET for state changes, require re-authentication for sensitive actions, and use POST/PUT/DELETE with tokens.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_29-1.jpg@@" alt="Diagram showing a CSRF token tied to a session and validated on the server">
+    <figcaption><b>Figure 29-1 — CSRF tokens.</b> The page receives a token bound to the user’s session; the attacker’s site can cause the browser to send cookies, but it cannot read the token. No token, no action.</figcaption>
+  </figure>
+
+  <div class="code">
+    <div class="bar"><span class="title">Middle-of-the-stack CSRF check</span><span class="tag good">safe</span></div>
+<pre><code>// every state-changing route
+if (req.method !== "GET") {
+  const token = req.get("X-CSRF-Token");
+  if (!token || !timingSafeEqual(token, req.session.csrf)) {
+    return res.status(403).json({ error: "invalid csrf token" });
+  }
+}</code></pre>
+  </div>
+</section>
+
+<section id="ch30">
+  <h2><span class="num">Chapter 30</span> · Defending Against XXE</h2>
+  <p class="oneliner">Turn off the dangerous XML features — external entities and DTDs — or don’t accept XML at all.</p>
+  <ul>
+    <li>Disable DTD processing, external general entities and external parameter entities; disable XInclude and entity expansion (which also stops entity-expansion denial-of-service attacks).</li>
+    <li>Use a hardened, up-to-date parser and set secure defaults in <em>one</em> shared utility so nobody has to remember.</li>
+    <li><strong>Evaluate other formats</strong> — JSON, YAML, CSV and even SVG have their own parser risks (YAML tags, SVG scripts); the point is that “we switched to JSON” must be checked, not assumed.</li>
+    <li><strong>Advanced XXE risks</strong> — SSRF, internal port scanning and denial of service through entity expansion.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_30-1.jpg@@" alt="Diagram showing an XML parser configured to reject external entities">
+    <figcaption><b>Figure 30-1 — blocking XXE at the parser.</b> With external entities and DTDs disabled, the malicious document parses to nothing useful and the file read simply fails.</figcaption>
+  </figure>
+</section>
+
+<section id="ch31">
+  <h2><span class="num">Chapter 31</span> · Defending Against Injection</h2>
+  <p class="oneliner">Keep code and data in separate lanes, and give the interpreter as little authority as possible.</p>
+  <ul>
+    <li><strong>SQL injection</strong> — parameterized queries, prepared statements, stored procedures, least-privilege database accounts, and no dynamic SQL built from strings.</li>
+    <li><strong>Generic injection defences</strong> — validate with allowlists, escape for the right context when parameterisation is impossible, avoid shells entirely, and never pass user input to <code>eval</code>, <code>exec</code>, <code>system</code>, <code>Function</code> or a template compiler.</li>
+    <li><strong>Principle of least authority</strong> (Figure 31-1) — if the query engine, the OS user and the container can only do the minimum, a successful injection is far less useful.</li>
+    <li><strong>Detect as well as prevent</strong> — log and alert on query errors and on input that looks like injection; attacks often need many attempts.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_31-1.jpg@@" alt="Diagram illustrating least authority for database and application accounts">
+    <figcaption><b>Figure 31-1 — least authority.</b> The application’s database account can reach only the tables it needs, with only the verbs it needs. When injection happens anyway, the damage is bounded.</figcaption>
+  </figure>
+</section>
+
+<section id="ch32">
+  <h2><span class="num">Chapter 32</span> · Defending Against DoS</h2>
+  <p class="oneliner">Put limits on everything an attacker can inflate: time, size, depth, connections and cost.</p>
+  <ul>
+    <li><strong>Regex DoS</strong> — avoid nested quantifiers and catastrophic backtracking; bound input length before matching; use RE2-style engines or timeouts.</li>
+    <li><strong>Logical DoS</strong> — cap upload size, page size, nesting depth, query complexity (especially GraphQL) and expensive searches; add per-user quotas and caching.</li>
+    <li><strong>DDoS</strong> — rate limiting at the edge, CDN absorption, scrubbing services, autoscaling, and blackholing as a last resort (Figure 32-1).</li>
+    <li><strong>Operational</strong> — timeouts on every outbound call, circuit breakers, and monitoring that alerts on abnormal resource use.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_32-1.jpg@@" alt="Diagram of blackholing traffic during a DDoS attack">
+    <figcaption><b>Figure 32-1 — blackholing.</b> When traffic cannot be separated, dropping it entirely protects the rest of the infrastructure — an ugly but sometimes correct last resort.</figcaption>
+  </figure>
+</section>
+
+<section id="ch33">
+  <h2><span class="num">Chapter 33</span> · Defending Data and Objects</h2>
+  <p class="oneliner">Decide which fields a client may write, verify who owns every object, and stop creating objects out of untrusted bytes.</p>
+  <ul>
+    <li><strong>Mass assignment</strong> — explicit allowlists of assignable fields (DTOs or dedicated input schemas), never a blind copy of the request body; separate “user-editable” from “server-controlled”.</li>
+    <li><strong>IDOR</strong> — authorize every object access against the current user (ownership or role), use unguessable identifiers as a second layer, and log access to sensitive records.</li>
+    <li><strong>Serialization attacks</strong> — do not deserialize untrusted data into objects; prefer plain JSON with schema validation; if you must, use allowlists, signing and integrity checks.</li>
+  </ul>
+</section>
+
+<section id="ch34">
+  <h2><span class="num">Chapter 34</span> · Defense Against Client-Side Attacks</h2>
+  <p class="oneliner">Harden the browser environment: clean objects, no framing, safe links, and isolation between origins.</p>
+  <ul>
+    <li><strong>Prototype pollution</strong> — <code>Object.create(null)</code> for dictionaries, <code>Object.freeze(Object.prototype)</code> where practical, reject <code>__proto__</code>/<code>constructor</code>/<code>prototype</code> keys, and use maintained merge libraries.</li>
+    <li><strong>Clickjacking</strong> — <code>Content-Security-Policy: frame-ancestors 'none'</code> (or <code>X-Frame-Options: DENY</code>) plus frame-busting for legacy clients.</li>
+    <li><strong>Tabnabbing</strong> — <code>rel="noopener noreferrer"</code> on every <code>target="_blank"</code> link.</li>
+    <li><strong>Isolation policies</strong> — COOP, COEP and CORP put your origin in its own process and refuse cross-origin embedding, which also blocks a range of side-channel and XS-Leak attacks.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Three small fixes that close three attack classes</span><span class="tag good">safe</span></div>
+<pre><code>&lt;!-- tabnabbing --&gt;
+&lt;a href="https://partner.example" target="_blank" rel="noopener noreferrer"&gt;Partner&lt;/a&gt;
+
+// prototype pollution: reject dangerous keys
+if (["__proto__","constructor","prototype"].includes(key)) continue;
+
+// isolation headers
+Content-Security-Policy: frame-ancestors 'none'
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: same-origin</code></pre>
+  </div>
+</section>
+
+<section id="ch35">
+  <h2><span class="num">Chapter 35</span> · Securing Third-Party Dependencies</h2>
+  <p class="oneliner">Treat every dependency as code written by a stranger that will run with your privileges — because that is exactly what it is.</p>
+  <ul>
+    <li><strong>Evaluate dependency trees</strong> (Figure 35-1) — one direct dependency can pull in hundreds of transitive ones; know how deep the tree goes and how many maintainers stand behind it.</li>
+    <li><strong>Secure integration</strong> — lockfiles and pinned versions, verified registries, subresource integrity for CDN scripts, vendoring critical libraries, and reviewing updates rather than auto-merging them.</li>
+    <li><strong>Continuous monitoring</strong> — SCA on every build, alerts for new CVEs, a policy for how fast to patch, and a plan for when a package is abandoned.</li>
+    <li><strong>Least privilege for dependencies</strong> — a library does not need your database credentials, your network access, or your production secrets.</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_35-1.jpg@@" alt="An npm dependency tree showing nested transitive dependencies">
+    <figcaption><b>Figure 35-1 — an npm dependency tree.</b> The packages you chose are the top level; the risk often sits several levels below, where nobody is looking.</figcaption>
+  </figure>
+</section>
+
+<section id="ch36">
+  <h2><span class="num">Chapter 36</span> · Mitigating Business Logic Vulnerabilities</h2>
+  <p class="oneliner">Since no signature can catch a wrong rule, you defend with architecture, invariants and statistics.</p>
+  <ul>
+    <li><strong>Architecture-level mitigations</strong> — one place that calculates money, immutable transaction records, server-side prices, explicit state machines and idempotency keys so a step cannot be replayed.</li>
+    <li><strong>Validate the whole flow</strong> — check that the steps happened in order and only once; never trust a client-supplied state.</li>
+    <li><strong>Statistical modelling</strong> — fraud detection on behaviour: velocity of orders, refund patterns, impossible geography, amounts that sit just under a limit.</li>
+    <li><strong>Human review and alerts</strong> — the anomaly that no rule predicted is exactly what monitoring is for.</li>
+    <li><strong>Test the rules, not just the code</strong> — write misuse cases (“apply the coupon twice”, “cancel after refund”) as automated tests.</li>
+  </ul>
+</section>
+
+<section id="ch37">
+  <h2><span class="num">Chapter 37</span> · Part III Summary &amp; Conclusion</h2>
+  <p class="oneliner">The whole book in one loop: map the surface, think like an attacker, design and configure for defence, then review, test, score and fix — forever.</p>
+  <ul>
+    <li><strong>History</strong> — the attacks change shape, the assumptions behind them do not.</li>
+    <li><strong>Recon</strong> — inventory is security. You cannot protect what you have not found.</li>
+    <li><strong>Offense</strong> — every attack class exploits an unverified assumption: data as code, request as intent, id as authority, library as trusted, rule as enforced.</li>
+    <li><strong>Defense</strong> — architecture and configuration prevent, encoding and parameterisation neutralise, CSP and headers contain, monitoring and management recover.</li>
+    <li><strong>Keep learning</strong> — the book closes with what to study next: protocols, cryptography, cloud, and the human side of security.</li>
+  </ul>
+</section>
+
+<section id="cheatsheet">
+  <h2>One-page cheat sheet</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Risk</th><th>Prevent</th><th>Contain / detect</th></tr></thead>
+      <tbody>
+        <tr><td>XSS</td><td>Contextual output encoding, framework escaping, sanitizers</td><td>CSP with nonces, Trusted Types, CSP reporting</td></tr>
+        <tr><td>CSRF</td><td>CSRF tokens, SameSite cookies</td><td>Origin / Referer / Sec-Fetch checks</td></tr>
+        <tr><td>XXE</td><td>Disable DTDs &amp; external entities, prefer JSON</td><td>Parser hardening, WAF rules, egress filtering</td></tr>
+        <tr><td>SQL injection</td><td>Parameterized queries, ORM, stored procedures</td><td>Least-privilege DB accounts, query error monitoring</td></tr>
+        <tr><td>Command injection</td><td>No shells, argument arrays, allowlists</td><td>Container isolation, seccomp, least privilege</td></tr>
+        <tr><td>DoS</td><td>Rate limits, quotas, timeouts, safe regex</td><td>CDN, scrubbing, autoscaling, blackholing</td></tr>
+        <tr><td>Mass assignment</td><td>Allowlist assignable fields (DTOs)</td><td>Audit logs on privileged field changes</td></tr>
+        <tr><td>IDOR</td><td>Object-level authorization on every access</td><td>Access logging and anomaly alerts</td></tr>
+        <tr><td>Prototype pollution</td><td>Key filtering, <code>Object.create(null)</code>, frozen prototypes</td><td>CSP, input schema validation</td></tr>
+        <tr><td>Clickjacking / tabnabbing</td><td><code>frame-ancestors</code>, <code>rel="noopener"</code></td><td>COOP/COEP/CORP isolation</td></tr>
+        <tr><td>Dependency attacks</td><td>Lockfiles, SRI, vetted registries, SCA</td><td>Continuous CVE monitoring, patch SLAs</td></tr>
+        <tr><td>Business logic</td><td>Server-side rules, state machines, idempotency</td><td>Statistical fraud detection, manual review</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout good">
+    <span class="label">The last word from the book</span>
+    <p>Security is not a checklist you finish — it is a property you keep. Understand the attack, then remove the assumption the attack depends on.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Summary notes for <strong>Web Application Security: Exploitation and Countermeasures</strong>, 2nd edition (Andrew Hoffman, O’Reilly 2024). Figures are reproduced from the book for study purposes; captions here are paraphrased explanations added so each diagram can be read on its own. Code examples are short illustrations written for these notes in the spirit of the book’s examples.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const p = h.scrollTop / (h.scrollHeight - h.clientHeight) * 100;
+  bar.style.width = p + '%';
+}, {passive:true});
+
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>
