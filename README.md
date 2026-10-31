@@ -12,6 +12,7 @@ Study notes for the two books in this repository:
 | `books/index.html` | Landing page: what each book covers and how they differ |
 | `books/alice-and-bob-learn-secure-coding.html` | Plain-language summary of all 15 chapters + 5 figures from the book |
 | `books/web-application-security.html` | Plain-language summary of all 37 chapters + 42 figures from the book |
+| `books/web-application-security-part1-recon.html` | Deep dive on Part I (Recon, chapters 2–8): 16 figures + the book's recon code |
 | `books/figures/` | The extracted figure images (JPEG) |
 | `tools/templates/` | Editable HTML templates and the shared stylesheet |
 | `tools/build_books.py` | Builds the three pages in `books/` from the templates |

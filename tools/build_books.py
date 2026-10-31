@@ -56,6 +56,7 @@ def main() -> None:
     build("index.html", "index.html", css)
     build("alice.html", "alice-and-bob-learn-secure-coding.html", css)
     build("web-application-security.html", "web-application-security.html", css)
+    build("hoffman-part1.html", "web-application-security-part1-recon.html", css)
 
 
 if __name__ == "__main__":
