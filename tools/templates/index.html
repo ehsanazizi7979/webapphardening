@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two books on web application security — visual summaries</title>
+<meta name="description" content="Plain-language chapter-by-chapter summaries of Alice & Bob Learn Secure Coding and Web Application Security: Exploitation and Countermeasures, with figures and code embedded.">
+<style>@@CSS@@</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Study notes</div>
+    <h1>Two books on secure coding,<br>explained simply</h1>
+    <p class="subtitle">Both books are in this repository. Each one now has a self-contained HTML summary: every chapter in plain language, with the book’s own figures and code examples embedded directly in the page (no external files needed).</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <section>
+    <div class="pillgrid">
+      <a class="pill" href="alice-and-bob-learn-secure-coding.html" style="text-decoration:none;color:inherit">
+        <div class="k">Book 1 · 15 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">Alice &amp; Bob Learn Secure Coding</div>
+        <div class="v" style="color:var(--muted)">Tanya Janca · Wiley 2025<br>The developer’s playbook: what to do, in which phase, in which language.</div>
+      </a>
+      <a class="pill" href="web-application-security.html" style="text-decoration:none;color:inherit">
+        <div class="k">Book 2 · 37 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">Web Application Security: Exploitation &amp; Countermeasures</div>
+        <div class="v" style="color:var(--muted)">Andrew Hoffman · O’Reilly, 2nd ed. 2024<br>Recon → offense → defense: how attacks work, then how to stop them.</div>
+      </a>
+      <a class="pill" href="web-application-security-complete.html" style="text-decoration:none;color:inherit">
+        <div class="k">Deep dive · complete · 36 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">The whole book, start to finish</div>
+        <div class="v" style="color:var(--muted)">Parts I, II and III concatenated in book order — recon, offense, defense in a single file with one table of contents.</div>
+      </a>
+      <a class="pill" href="web-application-security-part1-recon.html" style="text-decoration:none;color:inherit">
+        <div class="k">Deep dive · Part I · 7 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">Recon, step by step</div>
+        <div class="v" style="color:var(--muted)">The full walkthrough of Part I: mapping hosts, APIs, dependencies and architecture — with the book’s code listings.</div>
+      </a>
+      <a class="pill" href="web-application-security-part2-offense.html" style="text-decoration:none;color:inherit">
+        <div class="k">Deep dive · Part II · 11 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">Offense, step by step</div>
+        <div class="v" style="color:var(--muted)">The full walkthrough of Part II: XSS, CSRF, XXE, injection, DoS, object and client-side attacks, dependencies and business logic.</div>
+      </a>
+      <a class="pill" href="web-application-security-part3-defense.html" style="text-decoration:none;color:inherit">
+        <div class="k">Deep dive · Part III · 18 chapters</div>
+        <div class="v" style="font-size:1.08rem;font-weight:650;margin:6px 0">Defense, step by step</div>
+        <div class="v" style="color:var(--muted)">The full walkthrough of Part III: secure architecture, CSP and headers, threat modelling, code review, vulnerability management, and a fix for every attack in Part II.</div>
+      </a>
+    </div>
+
+    <h2>How the two books differ</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>Alice &amp; Bob Learn Secure Coding</th><th>Web Application Security (Hoffman)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Best for</strong></td><td>Developers who want a practical checklist, from first job to senior</td><td>Developers and testers who want to understand attacks deeply</td></tr>
+          <tr><td><strong>Approach</strong></td><td>Advice-first: “here is what to do and why”, organised by topic and by SDLC phase</td><td>Attacker-first: recon, exploit, then measure-by-measure defence</td></tr>
+          <tr><td><strong>Structure</strong></td><td>3 parts: general advice → language/framework specifics → secure SDLC</td><td>3 parts: recon → offense → defense, plus a history chapter</td></tr>
+          <tr><td><strong>Code</strong></td><td>Snippets in PHP, JavaScript, Python, SQL, Java, C#, Ruby, and more</td><td>Mostly JavaScript, chosen to keep examples readable</td></tr>
+          <tr><td><strong>Strength</strong></td><td>Breadth of practical guidance; exercises turn it into a course</td><td>Depth on how each vulnerability actually works; strong threat modelling and vulnerability-management chapters</td></tr>
+          <tr><td><strong>Read it when</strong></td><td>You are writing code today and want rules you can apply immediately</td><td>You want to think like the person attacking your code</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>The same lessons, said two ways</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Topic</th><th>Alice &amp; Bob</th><th>Hoffman</th></tr></thead>
+        <tbody>
+          <tr><td>Untrusted input</td><td>Validate everything, from any source — even your own database</td><td>Every attack class is an assumption about input that turned out to be false</td></tr>
+          <tr><td>XSS</td><td>Encode output for the context; add CSP; use <code>textContent</code></td><td>Stored / reflected / DOM / mutation XSS, then encoding, sanitizers and CSP</td></tr>
+          <tr><td>Injection</td><td>Parameterized queries, ORMs, safe system calls</td><td>SQL, code and command injection, exfiltration and bypass techniques, then least authority</td></tr>
+          <tr><td>Dependencies</td><td>Supply chain security, SCA, signed and immutable builds</td><td>Dependency trees, package-manager attacks, CVE/NVD, SRI and monitoring</td></tr>
+          <tr><td>Process</td><td>Security activities for every SDLC phase</td><td>Threat modelling, code review, vulnerability discovery and CVSS management</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout good">
+      <span class="label">About these pages</span>
+      <p>Each summary is a single HTML file with all images embedded as base64 data URIs, so it works offline, opens in any browser, and can be shared or printed as-is. Figures come from the books themselves; the captions explaining them were written for these notes.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Notes generated from the two PDFs in this repository. Intended for personal study.</p>
+  </footer>
+</div>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Application Security (Hoffman) — complete edition: recon, offense, defense</title>
+<meta name="description" content="All three deep dives in one file: the complete walkthrough of Web Application Security: Exploitation and Countermeasures by Andrew Hoffman (chapters 2-37), with the book's figures and code examples embedded.">
+<style>@@CSS@@
+/* --- additions used only by this combined edition --- */
+.parthead{margin:52px 0 30px;padding:26px 30px;border-radius:16px;border:1px solid var(--line);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 12%,transparent),transparent 72%);
+  box-shadow:var(--shadow)}
+.parthead .partnum{font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2)}
+.parthead h2{margin:8px 0 10px;font-size:1.75rem;line-height:1.15}
+.parthead .subtitle{font-size:.95rem;margin:0;max-width:80ch}
+.parthead .meta{margin-top:16px;gap:8px}
+.parthead .meta .chip{font-size:.72rem;padding:4px 10px}
+aside.toc a.part{margin-top:18px}
+aside.toc a.part:first-of-type{margin-top:8px}
+@media print{.parthead{break-after:avoid;box-shadow:none}}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · complete edition · all three parts in one file</div>
+    <h1>Web Application Security, start to finish</h1>
+    <p class="subtitle">The whole of <em>Web Application Security: Exploitation and Countermeasures</em> (Andrew Hoffman, 2nd ed. 2024) as a single read: <strong>Part I — Recon</strong> builds the map, <strong>Part II — Offense</strong> breaks into it, <strong>Part III — Defense</strong> walls it back up. Thirty-six chapters (2–37), explained simply, with the book’s own figures, code and payloads. Each part keeps its own summary, cheat sheet and defender tables.</p>
+    <div class="meta">
+      <span class="chip">3 parts · 36 chapters</span>
+      <span class="chip">Book pages 21–383</span>
+      <span class="chip">52 figures</span>
+      <span class="chip">One file, no network</span>
+    </div>
+    <nav class="booknav">
+      <a href="web-application-security-part1-recon.html">Part I on its own</a>
+      <a href="web-application-security-part2-offense.html">Part II on its own</a>
+      <a href="web-application-security-part3-defense.html">Part III on its own</a>
+      <a href="web-application-security.html">All 37 chapters (summary)</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+<!--TOC-->
+</aside>
+
+<main>
+<!--PARTS-->
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Combined edition of the three part-by-part notes on <em>Web Application Security: Exploitation and Countermeasures</em>, 2nd edition — Andrew Hoffman, O’Reilly 2024. Chapters 2–37, concatenated in book order from the separate Part I, Part II and Part III pages. Figures are reproduced from the book for study purposes; captions were written for these notes. Sections marked as author additions — the Part I “Defender’s version”, the Part II “Defender’s map”, the Part III “maturity ladder” — are not part of the book.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+}, {passive:true});
+
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>

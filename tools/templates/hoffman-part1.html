@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part I: Recon — Web Application Security (Hoffman) explained simply</title>
+<meta name="description" content="A plain-language walkthrough of Part I (Recon, chapters 2–8) of Web Application Security: Exploitation and Countermeasures by Andrew Hoffman, with the book's figures and code examples embedded.">
+<style>@@CSS@@</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · deep dive 1 of 2 · Part I</div>
+    <h1>Part I: Recon</h1>
+    <p class="subtitle">Chapters 2–8 of <em>Web Application Security: Exploitation and Countermeasures</em> (Andrew Hoffman, 2nd ed. 2024). Part I is not about hacking yet — it is about <strong>building a map</strong> of an application before you touch it: its hosts, its APIs, its dependencies and the weak spots in its architecture. Everything below is explained in plain language, with the book’s own figures and code.</p>
+    <div class="meta">
+      <span class="chip">Chapters 2–8</span>
+      <span class="chip">Pages 21–110 of Part I</span>
+      <span class="chip">6 figures + 20 code listings</span>
+      <span class="chip">No exploitation yet — this is the map</span>
+    </div>
+    <nav class="booknav">
+      <a href="web-application-security-part2-offense.html">Next: Part II (Offense) →</a>
+      <a href="web-application-security-complete.html">Complete edition (all 3 parts)</a>
+      <a href="web-application-security.html">← All 37 chapters (summary)</a>
+      <a href="alice-and-bob-learn-secure-coding.html">The other book</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+  <a href="#tldr">Part I in one page</a>
+  <a href="#ch2">2 · Introduction to recon</a>
+  <a href="#ch3">3 · Structure of a modern app</a>
+  <a href="#ch4">4 · Finding subdomains</a>
+  <a href="#ch5">5 · API analysis</a>
+  <a href="#ch6">6 · Third-party dependencies</a>
+  <a href="#ch7">7 · Weak points in architecture</a>
+  <a href="#ch8">8 · Part I summary</a>
+  <a href="#cheatsheet">Recon cheat sheet</a>
+  <a href="#defender">Defender’s version</a>
+</aside>
+
+<main>
+
+<!-- ================= TL;DR ================= -->
+<section id="tldr">
+  <h2>Part I in one page</h2>
+  <p class="oneliner">Recon is <b>building a map of an application — technical and functional — so you know what to attack and in which order</b>. Recon skills on their own are worth little; they become valuable when combined with offensive knowledge (what to do with the map) and defensive experience (what the defenders probably did).</p>
+
+  <p>The book opens Part I with a philosophical point that is easy to skip and important not to: a hacker must understand the application <em>as a business</em>, not just as code. Who are its users? How does it earn money? Why do users pick it over competitors? Without that, you cannot tell which data and which features actually matter. A car-sales site treats inventory and prices as mission-critical; a hobby site where enthusiasts post photos of their own cars treats user accounts as the crown jewels.</p>
+
+  <h3>The four things Part I teaches you to map</h3>
+  <ul class="steps">
+    <li><b>The business and the roles</b> (Chapter 2) — what the app does, who uses it, and what privileged interfaces must exist behind it (admin, teller, moderator).</li>
+    <li><b>The hosts</b> (Chapter 4) — every subdomain and server attached to the domain. The main site is the most hardened part; the interesting things live on the side doors.</li>
+    <li><b>The API surface</b> (Chapter 5) — endpoints, HTTP verbs, authentication scheme, and the payload shape each endpoint expects.</li>
+    <li><b>The stack and its weak points</b> (Chapters 3, 6, 7) — frameworks, servers, databases, libraries and versions; then the architectural signals that say “many bugs live here”.</li>
+  </ul>
+
+  <div class="callout warn">
+    <span class="label">Read this before you try anything</span>
+    <p>The book is explicit: these techniques can get your IP flagged, your account banned, or land you in legal trouble. <strong>Only perform them against applications you own or have written permission to test.</strong> Several techniques in this Part (verb fuzzing, brute forcing) can delete or modify real data.</p>
+  </div>
+
+  <div class="defender">
+    <span class="label">Why a defender should read Part I</span>
+    <p>Every technique here is a question your own application must be able to answer: do I know all my subdomains? Do I know which headers leak my stack? Do I know where my authorization checks live? Recon is also the cheapest form of self-audit — you find the weak mechanism before someone else does.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 2 ================= -->
+<section id="ch2">
+  <h2><span class="num">Chapter 2</span> · Introduction to Web Application Reconnaissance</h2>
+  <p class="oneliner">The user interface is not the application. What you can click is a small, curated subset of what actually exists — and the rest is what recon is for.</p>
+
+  <h3>What recon actually is</h3>
+  <ul>
+    <li><strong>Definition</strong> — the explorative data-gathering phase that happens <em>before</em> attacking. Hackers, pen testers and bug-bounty hunters do it; security engineers should do it too, to find weakly secured mechanisms and fix them first.</li>
+    <li><strong>Recon alone is not valuable</strong> — the skill becomes valuable when paired with offensive knowledge (how to use the map) and defensive experience (what the defenders probably forgot).</li>
+    <li><strong>You are not “inside” the UI</strong> — even public apps expose only part of their interface. Assume you are seeing a subset until proven otherwise.</li>
+    <li><strong>You do not need a UI at all</strong> — you can map an application you have no access to, purely by reverse-engineering the structure of its APIs and the payloads they accept.</li>
+  </ul>
+
+  <h3>The MegaBank thought experiment: why hidden interfaces must exist</h3>
+  <p>The book walks through a normal bank account: you open a checking account in a branch, a teller types it in, later you can view your balance online, and a banker can add a savings account or close your account for you. You — the customer — can <em>read</em>, but you cannot create, modify or delete your own account online. So somebody else must have an application that can. That reasoning produces this table (the book’s own):</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>User type</th><th>Position</th><th>Permissions</th></tr></thead>
+      <tbody>
+        <tr><td>Customer</td><td>External</td><td>Log in to the website. Read account balance via the web UI.</td></tr>
+        <tr><td>Teller</td><td>Internal</td><td>Create new accounts when provided paperwork from a customer.</td></tr>
+        <tr><td>Banker</td><td>Internal</td><td>Modify existing accounts on behalf of customers.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Conclusions the book draws from this:</p>
+  <ul>
+    <li>Large organisations cannot have developers hand-writing database queries per operation, so there is <strong>automation</strong> behind the scenes that external users never see.</li>
+    <li>That automation almost always uses <strong>tiered permissions</strong> — role-based access control (RBAC). Very few applications give every user one single permission level.</li>
+    <li>Walking the UI will never show you the endpoints meant for moderators or admins — but recon often can. You can even map the full permission set of an admin and compare it with a normal user’s.</li>
+    <li>Occasionally you find a <strong>glitch</strong> that lets a non-privileged user reach privileged functionality. That glitch is the vulnerability.</li>
+    <li>Sometimes you meet servers or APIs that are <strong>protected by nothing at all</strong> — one forgotten firewall rule puts an internal server on the public internet.</li>
+  </ul>
+
+  <h3>Web application mapping: write it down</h3>
+  <p>The book uses “map” the way geography does: the features, shapes and surfaces of an application. A map can be scratch notes for a small target, or a structured document for a big one. The only real requirements are that it stays <strong>traversable</strong> and that it <strong>preserves relationships and hierarchies</strong>. Hoffman prefers JSON-like notes and suggests tools such as Notion or XMind.</p>
+
+  <div class="code">
+    <div class="bar"><span class="title">Recon notes in JSON form — the book’s example, lightly trimmed</span><span class="tag neutral">book code</span></div>
+<pre><code>{
+  api_endpoints: {
+    sign_up: {
+      url: 'mywebsite.com/auth/sign_up',
+      method: 'POST',
+      shape: {
+        username:     { type: String, required: true,  min: 6, max: 18 },
+        password:     { type: String, required: true,  min: 6, max: 32 },
+        referralCode: { type: String, required: false, min: 64, max: 64 }
+      }
+    },
+    sign_in: {
+      url: 'mywebsite.com/auth/sign_in',
+      method: 'POST',
+      shape: {
+        username: { type: String, required: true, min: 6, max: 18 },
+        password: { type: String, required: true, min: 6, max: 32 }
+      }
+    },
+    reset_password: {
+      url: 'mywebsite.com/auth/reset',
+      method: 'POST',
+      shape: {
+        username:    { type: String, required: true, min: 6, max: 18 },
+        password:    { type: String, required: true, min: 6, max: 32 },
+        newPassword: { type: String, required: true, min: 6, max: 32 }
+      }
+    }
+  },
+  features: {
+    comments: {},
+    uploads: { file_sharing: {} }
+  },
+  integrations: {
+    oauth: { twitter: {}, facebook: {}, youtube: {} }
+  }
+}</code></pre>
+  </div>
+
+  <div class="callout info">
+    <span class="label">The pattern to notice</span>
+    <p>For every endpoint the note stores four things: <strong>URL, method, shape, and the fields with their limits</strong>. Those limits (<code>min: 6, max: 18</code>) are pure gold later — they tell you which input is validated and which is guessed, and they become your fuzzing ranges in Part II.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 3 ================= -->
+<section id="ch3">
+  <h2><span class="num">Chapter 3</span> · The Structure of a Modern Web Application</h2>
+  <p class="oneliner">You cannot recognise a misconfiguration if you do not recognise the component. This is the anatomy lesson: REST, JSON, JavaScript, the DOM, SPAs, auth systems, servers, databases, GraphQL, git and CDNs.</p>
+
+  <h3>Modern vs legacy applications</h3>
+  <ul>
+    <li><strong>Ten years ago</strong> — server-side frameworks rendered an HTML page and sent it to the browser; to update anything, the client requested another whole page. Then AJAX arrived and pages learned to make requests from inside a session.</li>
+    <li><strong>Today</strong> — the “application” is usually several applications talking over a network: a client app plus one or more stateless REST APIs, plus storage and third-party services.</li>
+    <li><strong>The browser app is a real application</strong> — it boots once, manages its own lifecycle, requests its own data, and no longer reloads pages. One client commonly talks to several different servers (e.g. one host for images, another for logins and data).</li>
+  </ul>
+
+  <p>The book’s list of what a typical modern app is built from: REST API · JSON or XML · JavaScript · an SPA framework (React, Vue, Ember, Angular) · an authentication and authorisation system · one or more web servers (usually Linux) · web server software (Express, Apache, NGINX) · one or more databases (MySQL, MongoDB…) · a client-side data store (cookies, web storage, IndexedDB).</p>
+
+  <h3>REST APIs in plain language</h3>
+  <p>REST (Representational State Transfer) is a set of rules for an API. The book’s four defining traits:</p>
+  <ol>
+    <li><strong>Separate from the client</strong> — the client can request resources but cannot run server logic or touch the database directly.</li>
+    <li><strong>Stateless</strong> — the API stores nothing about the caller’s connection. It can still authenticate and authorise, but the proof travels on <em>every</em> request (usually a token).</li>
+    <li><strong>Cacheable</strong> — responses can be marked cacheable or not, which is how these APIs scale. Badly managed caches leak one user’s data to another.</li>
+    <li><strong>One endpoint per object or method, organised hierarchically</strong> — e.g. <code>/moderators/joe/logs/12_21_2018</code>. Combined with HTTP verbs, the API becomes self-documenting: <code>DELETE /moderators/joe/logs/12_21_2018</code> does exactly what it reads like.</li>
+  </ol>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>HTTP verb</th><th>REST meaning</th><th>Everyday translation</th></tr></thead>
+      <tbody>
+        <tr><td><code>POST</code></td><td>Create</td><td>Make a new thing</td></tr>
+        <tr><td><code>GET</code></td><td>Read</td><td>Show me the thing</td></tr>
+        <tr><td><code>PUT</code></td><td>Update / replace</td><td>Replace the thing with this</td></tr>
+        <tr><td><code>PATCH</code></td><td>Update / modify</td><td>Change part of the thing</td></tr>
+        <tr><td><code>DELETE</code></td><td>Delete</td><td>Remove the thing</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>REST vs SOAP:</strong> older enterprise apps used SOAP, which always speaks XML. REST targets <em>data rather than functions</em>, caches easily and scales better; it accepts any data format, and in practice that format is JSON. That is why SOAP/XML is now mostly found in legacy enterprise systems.</p>
+
+  <div class="two">
+    <div class="code">
+      <div class="bar"><span class="title">The same user object, in XML (SOAP era)</span><span class="tag neutral">book code</span></div>
+<pre><code>&lt;user&gt;
+ &lt;username&gt;joe&lt;/username&gt;
+ &lt;password&gt;correcthorsebatterystaple&lt;/password&gt;
+ &lt;email&gt;joe@website.com&lt;/email&gt;
+ &lt;joined&gt;12/21/2005&lt;/joined&gt;
+ &lt;client-data&gt;
+  &lt;timezone&gt;UTF&lt;/timezone&gt;
+  &lt;operating-system&gt;Windows 10&lt;/operating-system&gt;
+  &lt;licenses&gt;
+   &lt;videoEditor&gt;abc123-2005&lt;/videoEditor&gt;
+   &lt;imageEditor&gt;123-456-789&lt;/imageEditor&gt;
+  &lt;/licenses&gt;
+ &lt;/client-data&gt;
+&lt;/user&gt;</code></pre>
+    </div>
+    <div class="code">
+      <div class="bar"><span class="title">…and in JSON (modern era)</span><span class="tag neutral">book code</span></div>
+<pre><code>{
+ "username": "joe",
+ "password": "correcthorsebatterystaple",
+ "email": "joe@website.com",
+ "joined": "12/21/2005",
+ "client_data": {
+  "timezone": "UTF",
+  "operating_system": "Windows 10",
+  "licenses": {
+   "videoEditor": "abc123-2005",
+   "imageEditor": "123-456-789"
+  }
+ }
+}</code></pre>
+    </div>
+  </div>
+
+  <p><strong>Why JSON won:</strong> it is lightweight (less bandwidth), needs very little parsing, is human-readable, is hierarchical, and looks almost like a JavaScript object — so every browser can parse it natively and fast.</p>
+
+  <div class="code">
+    <div class="bar"><span class="title">JSON is just a string until you parse it</span><span class="tag neutral">book code</span></div>
+<pre><code>const jsonString = `{
+ "first": "Sam",
+ "last": "Adams",
+ "email": "sam.adams@company.com",
+ "role": "Engineering Manager",
+ "company": "TechCo.",
+ "location": {
+  "country": "USA",
+  "state": "california",
+  "address": "123 main st.",
+  "zip": 98404
+ }
+}`;
+
+// convert the string sent by the server to an object
+const jsonObject = JSON.parse(jsonString);</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_3-1.jpg@@" alt="Swagger UI listing REST endpoints with colour-coded HTTP verbs">
+    <figcaption><b>Figure 3-1 — Swagger.</b> Because REST follows a strict pattern, tools can generate documentation automatically. For recon this is a gift: a live Swagger/OpenAPI page is a complete endpoint inventory, with verbs and parameter names, published by the application itself. Note how the colours map to GET / POST / PUT / DELETE.</figcaption>
+  </figure>
+
+  <h3>JavaScript — the parts that matter for security</h3>
+  <p>Servers can run any language; the browser only runs JavaScript. That is why every example in this book — and in Part I especially — is JavaScript. Five quirks are worth knowing before any of it makes sense:</p>
+
+  <h4>1. Variables and scope</h4>
+  <div class="code">
+    <div class="bar"><span class="title">Four ways to declare the same variable — four different behaviours</span><span class="tag neutral">book code</span></div>
+<pre><code>// global definition — no keyword at all
+age = 25;
+
+// function scoped
+var age = 25;
+
+// block scoped
+let age = 25;
+
+// block scoped, without reassignment
+const age = 25;</code></pre>
+  </div>
+  <ul>
+    <li><strong>No keyword → global.</strong> The variable is hoisted to global scope and also appears as a property of <code>window</code>, where any other script can read or overwrite it. That is a name-collision risk and a real security risk.</li>
+    <li><strong><code>var</code> → function-scoped.</strong> Declared inside an <code>if</code> block but inside a function, it is still visible after the block — the classic source of confusing bugs.</li>
+    <li><strong><code>let</code> → block-scoped.</strong> Same code, but now the variable is gone once the block ends. Fewer scope bugs.</li>
+    <li><strong><code>const</code> → block-scoped and cannot be reassigned</strong> (like <code>final</code> in Java).</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">The global leak, demonstrated</span><span class="tag bad">risky</span></div>
+<pre><code>// define global integer
+age = 25;
+
+console.log(age);        // 25 — direct call
+console.log(window.age); // 25 — same thing, via the window object</code></pre>
+  </div>
+
+  <h4>2. Functions and context</h4>
+  <p>Functions in JavaScript are objects: they can be assigned, passed and redefined. They come as anonymous functions, named functions, arrow (shorthand) functions that share their parent’s context, and the IIFE — an immediately invoked function expression, <code>(function(){})()</code>, used to run code in its own scope. Every function carries a <code>this</code> context that can be moved around with <code>bind</code>, <code>call</code> and <code>apply</code>.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Moving context between functions</span><span class="tag neutral">book code</span></div>
+<pre><code>// create a new getAge() clone bound to the ageData context
+const getBoundAge = getAge.bind(ageData)('joe');
+
+// invoke immediately with a supplied context
+const boundAge = getAge.call(ageData, 'joe');
+const boundAge2 = getAge.apply(ageData, ['joe']);
+
+// arrow functions inherit context instead of defining their own
+const soup = { garlic: true };
+soup.hasGarlic1 = function() { console.log(this.garlic); }; // true
+soup.hasGarlic2 = () => { console.log(this.garlic); };       // false</code></pre>
+  </div>
+
+  <h4>3. Prototypal inheritance</h4>
+  <p>There are no classes underneath — objects inherit from other objects through a prototype chain. Every object has a prototype pointer back to the function that created it. That single mechanic is why <em>prototype pollution</em> (Part II) is possible: write to <code>Object.prototype</code> and every object in the application inherits your value.</p>
+
+  <h4>4. Asynchrony</h4>
+  <p>Network requests take unpredictable time. Instead of waiting, JavaScript fires requests and describes what to do when they finish. Three generations of doing this:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Three ways to chain the same three requests</span><span class="tag neutral">book code</span></div>
+<pre><code>// 1. Callbacks — fast, but a pyramid of doom
+getUser(function(user) {
+  getUserProfile(user, function(profile) {
+    setUserProfileConfig(profile, config, function(result) {
+      console.log('success!');
+    });
+  });
+});
+
+// 2. Promises — vertical, with one place for errors
+new Promise((resolve, reject) => { /* ... */ })
+  .then((user) => { /* ... */ })
+  .then((profile) => { /* ... */ })
+  .catch((err) => console.log('an error occurred!'));
+
+// 3. async / await — reads like synchronous code
+const setUserProfile = async function() {
+  let user        = await getUser();
+  let userProfile = await getUserProfile(user);
+  let setProfile  = await setUserProfile(userProfile, config);
+};
+setUserProfile();</code></pre>
+  </div>
+  <div class="callout info">
+    <span class="label">Why this matters for recon scripts</span>
+    <p>Because requests can run concurrently, a recon script fires hundreds of DNS lookups or HTTP requests at once instead of waiting for each one. That is the difference between a brute force that takes minutes and one that takes days (Chapter 4 depends on it).</p>
+  </div>
+
+  <h4>5. The browser DOM</h4>
+  <p>The DOM is the browser’s standard library <em>and</em> its hierarchical model of the page. Its two main objects are <code>window</code> and <code>document</code>, defined by a spec maintained by WHATWG. Functions such as <code>document.querySelector()</code> look like JavaScript but are DOM methods. For security, the DOM is where data becomes markup — i.e. where XSS appears.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_3-3.jpg@@" alt="Browser developer tools showing the DOM window object and its properties">
+    <figcaption><b>Figure 3-3 — the DOM <code>window</code> object.</b> Inside the console you can see everything the page exposes: storage, cookies, location, loaded libraries. In recon, the console is your first and cheapest tool — and it is also the reason a global variable leak matters.</figcaption>
+  </figure>
+
+  <h3>SPA frameworks</h3>
+  <p>Old sites were ad-hoc scripts plus reused HTML templates — fine for static pages, useless for app-like behaviour. Single-page application frameworks closed that gap: they hold their own state, are built from reusable components with their own lifecycles, and deliver near-desktop experiences (Facebook, YouTube). The big open-source ones are <strong>React, Ember, Vue and Angular</strong>. They all sit on top of JavaScript and the DOM, and they add complexity from a security point of view — client-side routing, client-side storage and client-side rendering all become attack surface.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_3-4.jpg@@" alt="The VueJS website, one of the big single-page application frameworks">
+    <figcaption><b>Figure 3-4 — VueJS.</b> One of the four big SPA frameworks. For recon this matters twice: a framework is a fingerprint (Chapter 6), and it also tells you where the app’s rendering — and therefore its XSS risk — actually happens.</figcaption>
+  </figure>
+
+  <h3>Authentication and authorisation</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>Authentication (AuthN)</th><th>Authorisation (AuthZ)</th></tr></thead>
+      <tbody>
+        <tr><td>Question</td><td>“Are you really joe123?”</td><td>“What may joe123 touch?”</td></tr>
+        <tr><td>Example</td><td>Password, token, MFA, OAuth login</td><td>joe123 sees his photos; susan1988 sees hers, not each other’s</td></tr>
+        <tr><td>Where recon looks</td><td>How the session token is attached to requests</td><td>Which resources get checked, and where the check lives</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>HTTP Basic</strong> — <code>Authorization: Basic &lt;base64(user:password)&gt;</code> on every request. Supported by every browser, but the session never expires and the credentials are trivially decoded (<code>atob()</code>). Base64 is encoding, not encryption.</li>
+    <li><strong>Digest</strong> — hashes instead of base64, so harder to intercept and replay; the strength depends entirely on the hash used.</li>
+    <li><strong>OAuth</strong> — a big provider vouches for your identity with a token. Convenient (one place to update your data), but one compromised provider account compromises every connected app.</li>
+    <li><strong>MFA</strong> — usually layered on top, so a stolen password is not enough.</li>
+  </ul>
+  <div class="callout info">
+    <span class="label">The architectural tell the book gives you</span>
+    <p>Well-designed applications centralise authorisation in one class. Poorly written APIs re-implement the check in every endpoint — and by human error, some of those copies will be missing. If you spot per-endpoint hand-rolled checks, expect to find the one that forgot.</p>
+  </div>
+
+  <h3>Servers, databases and client-side storage</h3>
+  <ul>
+    <li><strong>Web servers</strong> — application logic sits on web server software, which sits on Linux, which sits on hardware. Apache (~half of all sites, since 1995), NGINX (~30%, growing, far less overhead per connection) and Microsoft IIS (Microsoft-specific stacks). Knowing the big three is how you later spot configuration-based vulnerabilities rather than logic bugs.</li>
+    <li><strong>SQL databases</strong> — still the default: PostgreSQL, SQL Server, MySQL, SQLite. Strict but fast and easy to query.</li>
+    <li><strong>NoSQL</strong> — MongoDB, DocumentDB, CouchDB: flexible “documents”, weaker at querying and aggregating.</li>
+    <li><strong>Specialised stores</strong> — e.g. Elasticsearch for search, synchronised with the main database.</li>
+    <li><strong>Multiple databases at once is normal</strong> — and dangerous: an app with perfect SQL handling may have wide-open MongoDB or Elasticsearch queries and permissions.</li>
+    <li><strong>Client-side stores</strong> — <code>localStorage</code> (persistent key/value, protected by the browser’s same-origin policy), <code>sessionStorage</code> (gone when the tab closes), and IndexedDB (an in-browser queryable NoSQL database).</li>
+  </ul>
+
+  <figure>
+    <img src="@@FIG:hoff_3-6.jpg@@" alt="Browser console showing localStorage setItem and getItem with an object stored as a string">
+    <figcaption><b>Figure 3-6 — local storage.</b> A powerful, persistent key/value store available in every modern browser. Two recon lessons hide in this screenshot: (1) anything the app stores here is readable from the console, and (2) the value comes back as <code>[object Object]</code> — storage only holds strings, so apps serialise objects into it, which is exactly where injected data ends up in Part II.</figcaption>
+  </figure>
+
+  <div class="callout warn">
+    <span class="label">The book’s warning about client stores</span>
+    <p>In poorly architected applications, client-side data stores can reveal sensitive data such as authentication tokens or other secrets. If a token lives in <code>localStorage</code>, any XSS on the site can read it.</p>
+  </div>
+
+  <h3>GraphQL</h3>
+  <p>GraphQL wraps existing endpoints and lets the client ask for exactly the fields it wants, bundling several requests into one network hop. That is great for performance and offers richer features (aliases, fragments, variables, directives, mutations). The recon twist: the client is now writing the query, so the server must bound what a query is allowed to cost.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_3-7.jpg@@" alt="A GraphQL query in JavaScript requesting a movie's lead actor and their other movies">
+    <figcaption><b>Figure 3-7 — GraphQL in JavaScript.</b> One query fetches the actor <em>and</em> their other movies; the REST version would need two round trips. Because the client chooses the shape, an attacker can ask for far more than the app’s own queries ever do.</figcaption>
+  </figure>
+
+  <h3>Version control, CI/CD and CDNs</h3>
+  <ul>
+    <li><strong>Git</strong> — branches, stashes and history, and hosts like GitHub and GitLab on top. History is recon material: it shows how the code evolved, what was removed, and what was accidentally published.</li>
+    <li><strong>CI/CD</strong> — pushes trigger tests and deployments. The book’s key sentence: security is no longer tied only to the network stack and application code, but also to the version-control system and the delivery pipeline. A compromise at either layer can be catastrophic.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">A normal Git workflow (and where secrets like to hide)</span><span class="tag neutral">book code</span></div>
+<pre><code>git init
+git remote add origin &lt;github-repository-url&gt;
+touch .gitignore
+echo "node_modules" &gt; .gitignore
+git add -A
+git commit -m "initial commit"
+git push --set-upstream origin main</code></pre>
+  </div>
+  <p>The <code>.gitignore</code> is the interesting line: whatever is <em>not</em> listed there gets committed forever. A key removed in a later commit still lives in history.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_3-8.jpg@@" alt="The GitHub website, a hosted git service used for code collaboration">
+    <figcaption><b>Figure 3-8 — GitHub.</b> A hosted git service: public repositories, public commit history, and public package manifests. All of that is recon material — including anything a developer meant to remove but committed first.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="@@FIG:hoff_3-9.jpg@@" alt="Diagram of a CDN serving cached content between the origin server and users">
+    <figcaption><b>Figure 3-9 — CDNs.</b> Static or rarely changing content is pushed to a content delivery network and cached close to users, instead of everyone hitting the origin. Convenient and fast — and a new place where content can be stale, mis-scoped or cached under the wrong identity.</figcaption>
+  </figure>
+</section>
+
+<hr>
+
+<!-- ================= CH 4 ================= -->
+<section id="ch4">
+  <h2><span class="num">Chapter 4</span> · Finding Subdomains</h2>
+  <p class="oneliner">The consumer-facing site is the most-watched, most-patched part of any company. The interesting bugs live on the subdomains nobody brags about.</p>
+
+  <div class="callout info">
+    <span class="label">The mindset first</span>
+    <p>Walking a public app and watching its network traffic only gets you so far. What you actually want is the list of hosts attached to the domain that are <strong>not linked from the public app at all</strong> — admin panels, APIs, dev and staging environments, mail and internal tools.</p>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_4-1.jpg@@" alt="Diagram of a subdomain web for mega-bank.com showing many related hosts">
+    <figcaption><b>Figure 4-1 — the “subdomain web”.</b> One brand, many hosts. Each node is a separate application with its own team, release cycle and security level — so each node is its own attack surface.</figcaption>
+  </figure>
+
+  <h3>Technique 1 — the browser’s own network tools</h3>
+  <p>Open DevTools → Network and watch every request: the request URL tells you which domain something was sent to or served from. Asynchronous calls are the valuable ones, because they often point at hosts the UI never links to.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_4-2.jpg@@" alt="Browser Network tab showing asynchronous XHR requests to JSON endpoints">
+    <figcaption><b>Figure 4-2 — the Network tab.</b> Requests shown as XHR/fetch are the app talking to its API: JSON payloads, status codes, timing and the initiator script that fired them. This is where you discover endpoints, parameter names, ids and tokens without guessing anything.</figcaption>
+  </figure>
+
+  <h3>Technique 2 — public records: search engine caches</h3>
+  <p>Google has more indexed data than anyone, but a raw search is too noisy. The trick is operators: <code>site:</code> restricts the domain, <code>-inurl:</code> removes the parts you already know about.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Filtering a site down to the parts you have not seen</span><span class="tag neutral">book code</span></div>
+<pre><code>site:mega-bank.com log in
+
+site:mega-bank.com -inurl:www -inurl:mobile</code></pre>
+  </div>
+  <p>The first query finds login pages across the domain. The second removes the main site and the mobile site, so what remains is the interesting long tail. Repeat until no new results appear, and try other engines — they support the same operators.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_4-4.jpg@@" alt="Google search using the site: operator combined with a negative inurl filter">
+    <figcaption><b>Figure 4-4 — search operators in action.</b> The query combines <code>site:</code> with <code>-inurl:</code> patterns to return only pages from one domain that are <em>not</em> part of the known, well-maintained sections. Free recon, no tools, no traffic to the target.</figcaption>
+  </figure>
+
+  <h3>Technique 3 — public records: accidental archives</h3>
+  <p>Archive.org keeps snapshots of websites going back decades (the New York Times alone has over 500,000 home-page snapshots since 1996). Old snapshots contain links and code that were removed from the live app but were once public — old subdomains, old download paths, old parameters.</p>
+  <p>The book’s manual recipe: open ten archives from ten dates spaced far apart → “View source” → select all → copy into a single <code>legacy-source.html</code> → search that file for <code>http://</code>, <code>https://</code> and <code>file://</code> to pull out every host that ever appeared.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_4-5.jpg@@" alt="An Archive.org snapshot of Wikipedia's main page from 2003">
+    <figcaption><b>Figure 4-5 — Archive.org.</b> A twenty-year-old snapshot of a page, still viewable. Content that was removed “for security reasons” is often preserved here — including the links to the servers it was hosted on.</figcaption>
+  </figure>
+
+  <h3>Technique 4 — public records: social snapshots</h3>
+  <p>Marketing campaigns, support links and recruiting posts leak subdomains. Every major platform offers a data/search API that can be queried for links to the target domain. The book’s example is the X (Twitter) search API:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Querying a social search API for links to the target domain</span><span class="tag neutral">book code</span></div>
+<pre><code>curl --request POST \
+  --url https://api.twitter.com/1.1/tweets/search/30day/Prod.json \
+  --header 'authorization: Bearer &lt;MY_TOKEN&gt;' \
+  --header 'content-type: application/json' \
+  --data '{
+           "maxResults": "100",
+           "keyword": "mega-bank.com"
+           }'</code></pre>
+  </div>
+  <p>Then scan the returned text for links: they tend to reveal hosts tied to campaigns, trackers and hiring events. Note the ethical caveat the book raises — this analyses data about ordinary users, so use it only within an authorised engagement.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_4-6.jpg@@" alt="The X (Twitter) API developer documentation showing search endpoints">
+    <figcaption><b>Figure 4-6 — social platform search APIs.</b> Documented, authenticated, and designed for programmatic queries. A search for the target domain inside public posts frequently surfaces subdomains nobody linked from the site itself.</figcaption>
+  </figure>
+
+  <h3>Technique 5 — DNS zone transfer attacks</h3>
+  <p>DNS turns names into IP addresses, and DNS servers keep their records in a <em>zone file</em>. Zone transfers exist so that a secondary server can copy the zone from the primary. If the primary does not restrict who may ask, anyone can ask — and receive the entire record list, including hosts that are not linked from the web app.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Ask for the nameservers, then ask one of them for the zone</span><span class="tag neutral">book code</span></div>
+<pre><code># 1. who serves DNS for the domain?
+host -t mega-bank.com
+
+# 2. pretend to be a secondary server and request the zone file
+host -l mega-bank.com ns1.bankhost.com</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">If the server is misconfigured, you get everything at once</span><span class="tag bad">misconfigured DNS</span></div>
+<pre><code>Using domain server:
+Name: ns1.bankhost.com
+Address: 195.11.100.25
+Aliases:
+
+mega-bank.com has address 195.250.100.195
+mega-bank.com name server ns1.bankhost.com
+mega-bank.com name server ns2.bankhost.com
+mail.mega-bank.com has address 82.31.105.140
+admin.mega-bank.com has address 32.45.105.144
+internal.mega-bank.com has address 25.44.105.144</code></pre>
+  </div>
+  <p>A correctly configured server simply answers <code>: Transfer Failed.</code> The book’s verdict: it is cheap to try (two lines of Bash) and easy to defend, so it is almost always worth attempting.</p>
+
+  <h3>Technique 6 — brute forcing subdomains</h3>
+  <p>Last resort, and noisy: attempts are easily logged and rate-limited, and network latency (50–250 ms per request) makes naive loops unbearably slow. So the script is asynchronous — fire everything, then collect.</p>
+
+  <div class="code">
+    <div class="bar"><span class="title">Generate every candidate name up to a length</span><span class="tag neutral">book code</span></div>
+<pre><code>const generateSubdomains = function(length) {
+  const charset = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  let subdomains = charset;
+  let subdomain, letter, temp;
+
+  for (let i = 1; i < length; i++) {
+    temp = [];
+    for (let k = 0; k < subdomains.length; k++) {
+      subdomain = subdomains[k];
+      for (let m = 0; m < charset.length; m++) {
+        letter = charset[m];
+        temp.push(subdomain + letter);
+      }
+    }
+    subdomains = temp;
+  }
+  return subdomains;
+};
+
+const subdomains = generateSubdomains(4);</code></pre>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">Resolve every candidate concurrently with Node’s DNS library</span><span class="tag neutral">book code</span></div>
+<pre><code>const dns = require('dns');
+const promises = [];
+
+subdomains.forEach((subdomain) =&gt; {
+  promises.push(new Promise((resolve, reject) =&gt; {
+    dns.resolve(`${subdomain}.mega-bank.com`, function (err, ip) {
+      return resolve({ subdomain: subdomain, ip: ip });
+    });
+  }));
+});
+
+Promise.all(promises).then(function(results) {
+  results.forEach((result) =&gt; {
+    if (!!result.ip) { console.log(result); }
+  });
+});</code></pre>
+  </div>
+  <p>Two engineering details the book highlights: <code>dns.resolve</code> is used instead of <code>dns.lookup</code> because <code>lookup</code> only <em>looks</em> asynchronous — underneath it calls the operating system’s synchronous <code>getaddrinfo(3)</code>. And <code>Promise.all</code> fires everything before collecting, which is what makes the brute force finish in a reasonable time.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Output — the map starts to fill in</span><span class="tag good">result</span></div>
+<pre><code>{ subdomain: 'mail',  ip: '12.32.244.156' },
+{ subdomain: 'admin', ip: '123.42.12.222' },
+{ subdomain: 'dev',   ip: '12.21.240.117' },
+{ subdomain: 'test',  ip: '14.34.27.119' },
+{ subdomain: 'www',   ip: '12.14.220.224' },
+{ subdomain: 'shop',  ip: '128.127.244.11' },
+{ subdomain: 'ftp',   ip: '12.31.222.212' },
+{ subdomain: 'forum', ip: '14.15.78.136' }</code></pre>
+  </div>
+
+  <h3>Technique 7 — dictionary attacks (the sane version)</h3>
+  <p>A dictionary attack tries a list of common subdomain names instead of every combination. It is far faster and usually finds something. The book lists the top of the dnscan wordlist — <code>www, mail, ftp, localhost, webmail, smtp, pop, ns1, webdisk, ns2, cpanel, whm, autodiscover, autoconfig, m, imap, test, ns, blog, pop3, dev, www2, admin, forum, news</code> — and dnscan publishes 10,000 of them under a permissive licence.</p>
+  <p>Large lists should be streamed from disk rather than loaded into memory, and the same <code>dns.resolve</code> pattern is reused:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Streaming a wordlist and resolving each candidate</span><span class="tag neutral">book code</span></div>
+<pre><code>const dns = require('dns');
+const csv = require('csv-parser');
+const fs = require('fs');
+const promises = [];
+
+fs.createReadStream('subdomains.csv')
+  .pipe(csv())
+  .on('data', (row) =&gt; {
+    promises.push(new Promise((resolve, reject) =&gt; {
+      dns.resolve(`${row.subdomain}.mega-bank.com`, function (err, ip) {
+        return resolve({ subdomain: row.subdomain, ip: ip });
+      });
+    }));
+  })
+  .on('end', () =&gt; {
+    // after all of the DNS queries have completed, log the results
+    Promise.all(promises).then(function(results) {
+      results.forEach((result) =&gt; {
+        if (!!result.ip) { console.log(result); }
+      });
+    });
+  });</code></pre>
+  </div>
+  <div class="callout good">
+    <span class="label">The book’s recommended order</span>
+    <p>Start with the dictionary (cheap, fast, high hit rate). Only fall back to generated brute force for the strange, non-standard names the dictionary missed.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 5 ================= -->
+<section id="ch5">
+  <h2><span class="num">Chapter 5</span> · API Analysis</h2>
+  <p class="oneliner">Once you know the hosts, the next question is: what does each host expose, with which verbs, behind which authentication, expecting which payload?</p>
+
+  <h3>Recognising a REST API from traffic</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Hierarchical resources = REST</span><span class="tag neutral">book code</span></div>
+<pre><code>GET  api.mega-bank.com/users/1234
+GET  api.mega-bank.com/users/1234/payments
+POST api.mega-bank.com/users/1234/payments</code></pre>
+  </div>
+  <p>Each URL names a resource, not a function, and <code>payments</code> is nested inside <code>users/1234</code> — so the API is hierarchical. A token on <em>every</em> request is the second tell, because REST is supposed to be stateless:</p>
+  <div class="code">
+    <div class="bar"><span class="title">A stateless, token-authenticated request</span><span class="tag neutral">book code</span></div>
+<pre><code>POST /users/1234/payments HTTP/1.1
+Host: api.mega-bank.com
+Authorization: Bearer abc21323
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/1.0 (KHTML, like Gecko)</code></pre>
+  </div>
+
+  <h3>Which verbs does the endpoint accept?</h3>
+  <p>The HTTP spec has a verb that exists purely to describe an endpoint: <code>OPTIONS</code>. It is the first thing to try.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Asking an endpoint what it supports</span><span class="tag neutral">book code</span></div>
+<pre><code>curl -i -X OPTIONS https://api.mega-bank.com/users/1234
+
+# 200 OK
+# Allow: HEAD, GET, PUT, DELETE, OPTIONS</code></pre>
+  </div>
+  <p>But <code>OPTIONS</code> is usually enabled only on APIs deliberately published for public use, so enterprise apps rarely expose it. The practical alternative is to try each verb against a known endpoint and watch for a status code.</p>
+
+  <div class="code">
+    <div class="bar"><span class="title">discoverHTTPVerbs() — try POST, GET, PUT, PATCH, DELETE on one URL</span><span class="tag neutral">book code</span></div>
+<pre><code>const discoverHTTPVerbs = function(url) {
+  const verbs = ['POST', 'GET', 'PUT', 'PATCH', 'DELETE'];
+  const promises = [];
+
+  verbs.forEach((verb) =&gt; {
+    const promise = new Promise((resolve, reject) =&gt; {
+      const http = new XMLHttpRequest();
+      http.open(verb, url, true);
+      http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+      http.onreadystatechange = function() {
+        if (http.readyState === 4) {
+          return resolve({ verb: verb, status: http.status });
+        }
+      };
+
+      // if the request does not complete in time, mark it as unsuccessful
+      setTimeout(() =&gt; {
+        return resolve({ verb: verb, status: -1 });
+      }, 1000);
+
+      http.send({});
+    });
+    promises.push(promise);
+  });
+
+  Promise.all(promises).then(function(values) {
+    console.log(values);
+  });
+};</code></pre>
+  </div>
+  <p>The logic is deliberately dumb: any status code at all means “this verb maps to something”; no response within a second becomes <code>-1</code>. One second is generous for an API, and the timeout is meant to be tuned.</p>
+  <div class="callout warn">
+    <span class="label">Careful</span>
+    <p>Fuzzing verbs can <strong>delete or modify real data</strong> — a stray <code>DELETE</code> against a live endpoint is exactly as destructive as it sounds. The book requires explicit permission before doing this.</p>
+  </div>
+
+  <h3>Which authentication scheme is in use?</h3>
+  <p>You need to know this before you can test anything else, because most endpoints only behave interestingly for an authenticated user. The book compares the three classic schemes:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Scheme</th><th>How it works</th><th>Strength</th><th>Weakness</th></tr></thead>
+      <tbody>
+        <tr><td>HTTP Basic</td><td>Username and password sent (base64) on every request</td><td>Natively supported by every browser</td><td>Session never expires; easy to intercept or decode</td></tr>
+        <tr><td>HTTP Digest</td><td>Hashed <code>username:realm:password</code> on every request</td><td>Harder to intercept; server can reject expired tokens</td><td>Strength depends on the hashing algorithm</td></tr>
+        <tr><td>OAuth</td><td>“Bearer” token issued by another site (e.g. “sign in with Amazon”)</td><td>Tokenised permissions can be shared between apps</td><td>Phishing risk; compromise the central site and you compromise every connected app</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>And the recognition step, in one screenshot of a request: a <code>Basic</code> header means basic auth, and the value decodes instantly.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Spot basic auth, then decode it in the console</span><span class="tag neutral">book code</span></div>
+<pre><code>GET /homepage
+HOST mega-bank.com
+Authorization: Basic am9lOjEyMzQ=
+Content Type: application/json
+
+/* Result = joe:1234 */
+atob('am9lOjEyMzQ=');</code></pre>
+  </div>
+  <p>Because this scheme is so weak, it is normally only acceptable over TLS — which is exactly why the book notes the credentials cannot be lifted mid-air on a café Wi-Fi, but <em>can</em> be lifted by XSS. The recon payoff: once you know requests are authenticated with a header, re-try the endpoints that returned nothing with that header attached.</p>
+
+  <h3>What payload shape does the endpoint expect?</h3>
+  <ul>
+    <li><strong>Common shapes</strong> — many endpoints follow a public spec. An OAuth 2.0 authorisation endpoint always expects the same fields, so the spec <em>is</em> the documentation:</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">A standard OAuth 2.0 authorisation payload</span><span class="tag neutral">book code</span></div>
+<pre><code>{
+  "response_type": code,
+  "client_id": id,
+  "scope": [scopes],
+  "state": state,
+  "redirect_uri": uri
+}</code></pre>
+  </div>
+  <ul>
+    <li><strong>Application-specific shapes</strong> — when no spec exists, the only reliable source is the traffic the app itself sends. Guessing works less well, and automated shape-guessing is trivially detectable.</li>
+    <li><strong>Start where everyone starts</strong> — sign in, sign up, password reset. Authentication endpoints are usually built on a standard scheme, so their shapes are guessable across applications.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CH 6 ================= -->
+<section id="ch6">
+  <h2><span class="num">Chapter 6</span> · Identifying Third-Party Dependencies</h2>
+  <p class="oneliner">Find the library, find the version, and an existing public exploit usually does the rest — that is what CVE databases are for.</p>
+
+  <p>Dependencies come in-house and external, free (open source) or licensed. They are attractive because they are often <strong>not reviewed as carefully as first-party code</strong>, and because their vulnerabilities are <em>already public</em>: sometimes you do not have to write an attack at all, you copy one from a CVE. These techniques apply to client-side frameworks (SPA libraries, JS helpers, CSS frameworks) and to server-side software.</p>
+
+  <h3>Client side: SPA frameworks announce themselves</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Four frameworks, four one-liners, four versions</span><span class="tag neutral">book code</span></div>
+<pre><code>// EmberJS — a global object with a version constant
+console.log(Ember.VERSION);          // 3.1.0
+
+// React — the same idea
+console.log(React.version);          // 0.13.3
+
+// VueJS — the same idea
+console.log(Vue.version);            // 2.6.10
+
+// Angular 4+ — no global version; read the attribute on the root element
+const elements = getAllAngularRootElements();
+const version  = elements[0].attributes['ng-version'];  // ng-version="6.1.2"
+console.log(version);</code></pre>
+  </div>
+  <p>Extra details the book gives per framework: Ember tags DOM elements with <code>ember-id</code> and wraps them in a <code>class="ember-application"</code> parent (usually the body). React leaves script tags of type <code>text/jsx</code>. Angular before 4.0 had a global <code>angular</code> object with <code>angular.version</code>; on 4.0+ you check for the <code>ng</code> global instead and then read <code>ng-version</code>. And Vue may hide its components from devtools — a single line turns them back on:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Re-enabling Vue component inspection</span><span class="tag neutral">book code</span></div>
+<pre><code>// Vue components can now be inspected
+Vue.config.devtools = true;</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_6-1.jpg@@" alt="Browser console showing the Ember version of a site">
+    <figcaption><b>Figure 6-1 — detecting EmberJS.</b> One console command returns the exact framework version. From there a CVE search replaces guesswork: known versions have known exploits.</figcaption>
+  </figure>
+
+  <h3>Client side: JavaScript libraries and CSS</h3>
+  <p>Some libraries namespace themselves on globals — Underscore and Lodash use <code>_</code>, jQuery uses <code>$</code> — which makes them instantly visible. Everything else you find by listing the scripts the page actually loaded:</p>
+  <div class="code">
+    <div class="bar"><span class="title">List every external script (and then every stylesheet)</span><span class="tag neutral">book code</span></div>
+<pre><code>const getScripts = function() {
+  const scripts = document.querySelectorAll('script');
+  scripts.forEach((script) =&gt; {
+    if (script.src) {
+      console.log(`i: ${script.src}`);
+    }
+  });
+};
+
+// output
+// i: https://www.google-analytics.com/analytics.js
+// i: https://www.googletagmanager.com/gtag/js?id=UA-1234
+// i: https://js.stripe.com/v3/
+// i: https://code.jquery.com/jquery-3.4.1.min.js
+// i: https://cdnjs.cloudflare.com/ajax/libs/d3/5.9.7/d3.min.js
+// i: /assets/main.js</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">The same trick for CSS libraries</span><span class="tag neutral">book code</span></div>
+<pre><code>const getStyles = function() {
+  const links = document.querySelectorAll('link');
+  links.forEach((link) =&gt; {
+    if (link.rel === 'stylesheet') {
+      console.log(`i: ${link.getAttribute('href')}`);
+    }
+  });
+};
+
+// output
+// i: /assets/jquery-ui.css
+// i: /assets/bootstrap.css
+// i: /assets/main.css
+// i: /assets/components.css
+// i: /assets/reset.css</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:hoff_6-2.jpg@@" alt="Browser console showing the jQuery global and its version 3.5.1">
+    <figcaption><b>Figure 6-2 — library globals.</b> Typing <code>$</code> shows jQuery is present, and <code>$.fn.jquery</code> returns the exact version (3.5.1). Note the CDN URL in the previous code listing — it carried the version too.</figcaption>
+  </figure>
+
+  <h3>Server side: headers, error pages and fingerprints</h3>
+  <p>The server is harder to see than the client, but it leaves marks.</p>
+  <ul>
+    <li><strong>Headers that talk too much</strong> — <code>X-Powered-By: ASP.NET</code>, or better still <code>Server: Microsoft-IIS/4.5</code> plus <code>X-AspNet-Version: 4.0.25</code>. Competent admins remove them; millions of sites still send them.</li>
+    <li><strong>Default error and 404 pages</strong> — each framework ships its own, and they survive until someone replaces them. They often reveal the framework and even a version range.</li>
+  </ul>
+
+  <p>The book’s worked example is Ruby on Rails. Its default 404 page is a box saying “The page you were looking for doesn’t exist”. That page is in the public Rails repository, so its <em>history</em> is public too — and each commit is a timestamp marker:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Date</th><th>Change to the 404 page</th><th>What it tells you</th></tr></thead>
+      <tbody>
+        <tr><td>5 Apr 2012</td><td>HTML5 <code>type</code> attribute removed</td><td>If <code>type="text/css"</code> is still there → version from 2012 or earlier</td></tr>
+        <tr><td>21 Nov 2013</td><td><code>U+00A0</code> replaced with whitespace</td><td>If <code>U+00A0</code> is present → from Nov 2013 or earlier</td></tr>
+        <tr><td>20 Apr 2017</td><td>Namespaced CSS selectors (<code>.rails-default-error-page</code>) added</td><td>If those selectors are missing → from Apr 2017 or earlier</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Combining the surviving markers with the official release schedule narrows the application to a range — in the book’s example <strong>Rails 3.2.16 to 4.2.8</strong>. And that range is vulnerable to <strong>CVE-2016-6316</strong>, an XSS where HTML padded with quotes injected into a database field is executed by an Action View tag helper. One 404 page, one version range, one documented exploit.</p>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:hoff_6-3.jpg@@" alt="A GitHub commit history page for the Ruby on Rails repository">
+      <figcaption><b>Figure 6-3 — fingerprinting Rails.</b> A public repository means public commit history. Dated changes to a default file become a timeline you can match against the copy of that file in front of you.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:hoff_6-4.jpg@@" alt="The default Ruby on Rails 404 error page">
+      <figcaption><b>Figure 6-4 — Rails’ default 404 page.</b> Generic and forgettable — which is the point: the exact HTML, whitespace and CSS class names of this page encode the version it came from.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Server side: which database?</h3>
+  <p>Database errors rarely reach the client, so the book uses a subtler signal: <strong>primary key scanning</strong>. Every database generates primary keys in its own way, so the shape of an id in traffic identifies the database.</p>
+  <p>MongoDB’s default <code>_id</code> is an <code>ObjectId</code>: exactly 12 bytes — 4 bytes of Unix timestamp, 5 random bytes, 3 bytes of a counter starting from a random value — rendered as a 12-byte hexadecimal string:</p>
+  <div class="code">
+    <div class="bar"><span class="title">A MongoDB ObjectId, and where ids show up in traffic</span><span class="tag neutral">book code</span></div>
+<pre><code>507f1f77bcf86cd799439011
+
+GET users/:id                       // id in the path
+PUT users, body = { id: id }        // id in the body
+GET users?id=id                     // id in the query string
+
+// …and sometimes in object metadata
+{
+  _id: '507f1f77bcf86cd799439011',
+  username: 'joe123',
+  email: 'joe123@my-email.com',
+  role: 'moderator',
+  biography: '...'
+}</code></pre>
+  </div>
+  <p>If ids look like 12-byte hex strings, you are probably looking at MongoDB. Sequential integers could be several databases, so that pattern tells you less — often you then combine it with forced error messages to disambiguate.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 7 ================= -->
+<section id="ch7">
+  <h2><span class="num">Chapter 7</span> · Identifying Weak Points in Application Architecture</h2>
+  <p class="oneliner">One XSS is probably one careless method. Dozens of XSS in the same app is an architecture problem — and architecture is the best predictor of where the next bug will be.</p>
+
+  <h3>First, what your map should contain</h3>
+  <ul>
+    <li>Technology used in the application</li>
+    <li>API endpoints, grouped by HTTP verb</li>
+    <li>API endpoint shapes, where you know them</li>
+    <li>Functionality included (comments, auth, notifications, uploads…)</li>
+    <li>Domains used by the application</li>
+    <li>Configurations found (e.g. a Content Security Policy)</li>
+    <li>Authentication and session-management systems</li>
+  </ul>
+  <p>That list is what turns recon into prioritisation: with it you can rank what to attack first, instead of working alphabetically.</p>
+
+  <h3>Secure vs insecure architecture, by example</h3>
+  <p>Take two apps that both let users send direct messages. In the insecure one, the API accepts a script, the database stores it, nothing filters it on the way back, and it reaches the DOM — <code>&lt;script&gt;alert('hacked')&lt;/script&gt;</code> executes. The secure one has <em>one or more</em> of those protections.</p>
+  <p>But per-case protections are expensive and easy to forget. The book’s framing: a secure application implements security <strong>before and during</strong> feature development; a mediocre one implements it <strong>during</strong>; an insecure one does not implement it at all. Rewrite the same messaging feature ten times over five years and each implementation will differ structurally — while the security risks stay identical.</p>
+
+  <div class="code">
+    <div class="bar"><span class="title">The book’s messaging feature, reduced to its parts</span><span class="tag neutral">book code</span></div>
+<pre><code>// client/send.js — collect the message and the target, then POST it
+const send = function() {
+  const message = document.querySelector('#send').value;
+  const target  = document.querySelector('#target').value;
+  messageUtils.sendMessageToServer(session.token, target, message);
+};
+
+// server/postMessage.js — check the request, then store it
+const postMessage = function(req, res) {
+  if (!req.body.token || !req.body.target || !req.body.message) {
+    return res.sendStatus(400);
+  }
+  saveMessage(req.body.token, req.body.target, req.body.message)
+    .then(() => res.sendStatus(200))
+    .catch((err) => res.sendStatus(400));
+};
+
+// client/displayMessage.js — fetch a message and render it
+const displayMessage = function(msgId) {
+  messageUtils.getMessageById(session.token, msgId)
+    .then((msg) => {
+      messageUtils.appendToDOM('#message', msg);
+      messageUtils.appendToDOM('#message-author', msg.author);
+    })
+    .catch(() => console.log('an error occured'));
+};</code></pre>
+  </div>
+
+  <p>Now the architectural fix — one shared utility, with the dangerous path explicitly labelled and off by default:</p>
+  <div class="code">
+    <div class="bar"><span class="title">appendToDOM() — safe by default, unsafe only when asked</span><span class="tag good">safe pattern</span></div>
+<pre><code>import { DOMPurify } from '../utils/DOMPurify';
+// makes use of: https://github.com/cure53/DOMPurify
+
+const appendToDOM = function(data, selector, unsafe = false) {
+  const element = document.querySelector(selector);
+
+  // for cases where DOM injection is required (not default)
+  if (unsafe) {
+    element.innerHTML = DOMPurify.sanitize(data);
+  } else {                       // standard cases (default)
+    element.innerText = data;
+  }
+};</code></pre>
+  </div>
+  <p>Three design details matter here, and the book points them out: the flag is <strong>off by default</strong>, it is named <code>unsafe</code> so nobody flips it casually, and it is the <strong>last parameter</strong>, so it is unlikely to be set by accident. A utility like this is the signature of a secure architecture — and its absence is the signature of an insecure one.</p>
+
+  <h3>Multiple layers of security</h3>
+  <p>The messaging example has five places where XSS risk lives:</p>
+  <ul class="layerlist">
+    <li>API POST</li><li>Database write</li><li>Database read</li><li>API GET</li><li>Client read</li>
+  </ul>
+  <p>The same is true of XXE, CSRF and most other vulnerability classes. Now the failure story: the developers sanitise at <strong>API POST</strong>, so single messages are safe. A year later someone ships a <strong>bulk messaging endpoint</strong> that accepts a list of messages — and it does not reuse the same sanitisation. The original protection is bypassed without anyone touching the original code.</p>
+  <div class="callout warn">
+    <span class="label">The lesson</span>
+    <p>An application is only as secure as the weakest link in its architecture. If defences exist at two layers (say API POST <em>and</em> database write), the new endpoint cannot reopen the hole. And different layers can do different things: a headless browser at the API can detect script execution, which is impossible at the database layer — but a browser-specific bug might let a payload slip past the headless browser and still execute in a vulnerable real browser. Layers complement each other precisely because they are different.</p>
+  </div>
+
+  <h3>Adoption and reinvention</h3>
+  <p>The last risk signal is <strong>re-inventing existing technology</strong>. It usually starts as an organisational problem and shows up in the architecture. The book’s list of reasons teams rebuild instead of adopting: avoiding complicated licences, adding functionality the existing tool lacks, marketing a new in-house feature — and the honest one, that building something from scratch is more fun and challenging than integrating someone else’s tool. Reinvention is not automatically bad; it must be evaluated case by case. But hand-rolled crypto, auth, parsers and session handling are where the worst bugs live.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 8 ================= -->
+<section id="ch8">
+  <h2><span class="num">Chapter 8</span> · Part I Summary</h2>
+  <p class="oneliner">Recon ends when you have a map you can prioritise from — and a recorded toolkit you can automate, teach and improve.</p>
+  <ul>
+    <li><strong>Keep evolving techniques</strong> — they get stale. Server packages have become much better at not leaking their name and version, so header-based detection is worth less than it used to be.</li>
+    <li><strong>Basics never disappear, technologies do</strong> — you will keep needing to map whatever is current, and you will still meet legacy stacks.</li>
+    <li><strong>Record your techniques, not just your findings</strong> — a documented method can become automation, can be taught, and can be improved. Too much recon knowledge stays locked inside individual testers’ heads.</li>
+    <li><strong>Share what you invent</strong> — the techniques help pen testers, and often end up improving application security for everyone.</li>
+  </ul>
+  <div class="defender">
+    <span class="label">What Part I implies for defenders</span>
+    <p>If your security depends on attackers not finding a host, an endpoint, a version or an architectural weakness, you do not have security — you have luck. Part I is a list of everything an attacker will learn about you before they send a single malicious payload; every item on it is something you can inventory, harden or remove first.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CHEAT SHEET ================= -->
+<section id="cheatsheet">
+  <h2>Recon cheat sheet (Part I in one table)</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Goal</th><th>Technique</th><th>What you get</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="2">Understand the app</td><td>Read the product as a business</td><td>Which data and features actually matter</td></tr>
+        <tr><td>Reason about roles (RBAC)</td><td>The privileged interfaces that must exist behind the UI</td></tr>
+        <tr><td rowspan="4">Find hosts</td><td>DevTools → Network tab</td><td>Every domain the app talks to</td></tr>
+        <tr><td>Search operators (<code>site:</code>, <code>-inurl:</code>)</td><td>Indexed pages never linked from navigation</td></tr>
+        <tr><td>Archive.org snapshots + “view source”</td><td>Hosts and paths that were removed from the live app</td></tr>
+        <tr><td><code>host -l domain ns1.…</code> (zone transfer)</td><td>The entire DNS zone, if the server is misconfigured</td></tr>
+        <tr><td>Find hosts (last resort)</td><td>Brute force / dictionary with <code>dns.resolve</code> in parallel</td><td>Non-standard subdomains</td></tr>
+        <tr><td rowspan="4">Map the API</td><td>Watch XHR/fetch traffic</td><td>Endpoints, ids, tokens and payload shapes</td></tr>
+        <tr><td><code>OPTIONS</code> / verb fuzzing</td><td>Which HTTP verbs each endpoint accepts</td></tr>
+        <tr><td>Read the auth header</td><td>Basic / Digest / Bearer / custom token</td></tr>
+        <tr><td>Compare against public specs</td><td>Expected payload shape (e.g. OAuth 2.0)</td></tr>
+        <tr><td rowspan="3">Fingerprint the stack</td><td><code>Ember.VERSION</code>, <code>React.version</code>, <code>Vue.version</code>, <code>ng-version</code></td><td>Client framework + version</td></tr>
+        <tr><td><code>getScripts()</code> / <code>getStyles()</code></td><td>Every third-party script and stylesheet</td></tr>
+        <tr><td>Headers, 404 pages, git history, id formats</td><td>Server software, framework version range, database type</td></tr>
+        <tr><td>Judge the architecture</td><td>Look for shared secure utilities vs per-endpoint checks; count the layers that validate</td><td>Where the next vulnerabilities will be</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="defender">
+  <h2>Defender’s version: make each technique useless</h2>
+  <p class="mini">Not part of the book’s Part I — this is the mirror image, derived from the same techniques. Each row undoes one recon advantage.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Recon technique</th><th>Defence</th></tr></thead>
+      <tbody>
+        <tr><td>Zone transfer</td><td>Allow AXFR only from authorised secondary servers; monitor for attempts.</td></tr>
+        <tr><td>Subdomain discovery</td><td>Inventory hosts yourself, retire unused ones, and keep staging/dev off the public DNS.</td></tr>
+        <tr><td>Search engines and archives</td><td>Don’t publish what should not be public; remember that removing it later does not remove the copy.</td></tr>
+        <tr><td>Brute forcing / dictionary</td><td>Rate limiting and alerting at the DNS and edge layers.</td></tr>
+        <tr><td>Version fingerprinting</td><td>Strip <code>Server</code> and <code>X-Powered-By</code>, replace default error and 404 pages, keep libraries current.</td></tr>
+        <tr><td>Client-side version globals</td><td>Build production bundles that don’t expose version constants; use SRI for CDN scripts.</td></tr>
+        <tr><td>Verb fuzzing</td><td>Disable unused HTTP methods, enforce authorisation on every verb, log 4xx storms.</td></tr>
+        <tr><td>Payload-shape guessing</td><td>Validate and reject unexpected fields; do not echo internal error details.</td></tr>
+        <tr><td>Architecture signals</td><td>Centralise security utilities (validation, encoding, authorisation) so no endpoint can forget them.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Notes on <strong>Part I (Recon)</strong> of <em>Web Application Security: Exploitation and Countermeasures</em>, 2nd edition — Andrew Hoffman, O’Reilly 2024. Figures are reproduced from the book for study purposes; captions explaining them were written for these notes, and code listings are the book’s examples (lightly reformatted). The “Defender’s version” section is an addition, not part of the book.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+}, {passive:true});
+
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>

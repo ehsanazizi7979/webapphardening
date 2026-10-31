@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part III: Defense — Web Application Security (Hoffman) explained simply</title>
+<meta name="description" content="A plain-language walkthrough of Part III (Defense, chapters 20–37) of Web Application Security: Exploitation and Countermeasures by Andrew Hoffman, with the book's figures and code examples embedded.">
+<style>@@CSS@@</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · deep dive 3 of 3 · Part III</div>
+    <h1>Part III: Defense</h1>
+    <p class="subtitle">Chapters 20–37 of <em>Web Application Security: Exploitation and Countermeasures</em> (Andrew Hoffman, 2nd ed. 2024). Part I drew the map, Part II broke in, and Part III builds the walls — architecture, browser configuration, threat models, code review, vulnerability pipelines, and one chapter of countermeasures for each attack family from Part II.</p>
+    <div class="meta">
+      <span class="chip">Chapters 20–37</span>
+      <span class="chip">Book pages 229–383</span>
+      <span class="chip">17 figures</span>
+      <span class="chip">Mitigations, not fixes</span>
+    </div>
+    <nav class="booknav">
+      <a href="web-application-security-part2-offense.html">← Part II: Offense</a>
+      <a href="web-application-security-part1-recon.html">← Part I: Recon</a>
+      <a href="web-application-security-complete.html">Complete edition (all 3 parts)</a>
+      <a href="web-application-security.html">All 37 chapters (summary)</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+  <a href="#tldr">Part III in one page</a>
+  <a href="#ch20">20 · Securing modern apps</a>
+  <a href="#ch21">21 · Secure architecture</a>
+  <a href="#ch22">22 · Secure configuration</a>
+  <a href="#ch23">23 · Secure UX</a>
+  <a href="#ch24">24 · Threat modeling</a>
+  <a href="#ch25">25 · Reviewing code</a>
+  <a href="#ch26">26 · Vulnerability discovery</a>
+  <a href="#ch27">27 · Vulnerability management</a>
+  <a href="#ch28">28 · Defending XSS</a>
+  <a href="#ch29">29 · Defending CSRF</a>
+  <a href="#ch30">30 · Defending XXE</a>
+  <a href="#ch31">31 · Defending injection</a>
+  <a href="#ch32">32 · Defending DoS</a>
+  <a href="#ch33">33 · Data &amp; objects</a>
+  <a href="#ch34">34 · Client-side defenses</a>
+  <a href="#ch35">35 · Third-party deps</a>
+  <a href="#ch36">36 · Business logic</a>
+  <a href="#ch37">37 · Part III summary</a>
+  <a href="#cheatsheet">Attack → defense table</a>
+  <a href="#maturity">Maturity ladder</a>
+</aside>
+
+<main>
+
+<!-- ================= TL;DR ================= -->
+<section id="tldr">
+  <h2>Part III in one page</h2>
+  <p class="oneliner">Every chapter of Part II had a cheap, well-known fix — and yet the attacks keep happening, because the fixes have to be applied <b>everywhere, in order, and forever</b>. That is the real subject of Part III: not a list of patches, but a pipeline that makes forgetting difficult.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Chapter</th><th>The question it answers</th></tr></thead>
+      <tbody>
+        <tr><td>Architecture</td><td>21</td><td>Is the shape of the system safe before any code exists?</td></tr>
+        <tr><td>Configuration</td><td>22</td><td>Am I using the browser’s built-in protections — CSP, CORS, cookies, headers?</td></tr>
+        <tr><td>User experience</td><td>23</td><td>Am I leaking data, or enabling enumeration, through the UI?</td></tr>
+        <tr><td>Design review</td><td>24</td><td>What can go wrong, who would do it, and what is already mitigated?</td></tr>
+        <tr><td>Code review</td><td>25</td><td>Does the committed code contain archetypal or logic flaws?</td></tr>
+        <tr><td>Discovery</td><td>26</td><td>How do we find what review missed — automation, disclosure, bounties, pen tests?</td></tr>
+        <tr><td>Management</td><td>27</td><td>How is a found bug reproduced, scored, fixed and prevented from returning?</td></tr>
+        <tr><td>Countermeasures</td><td>28–36</td><td>For each attack family: what exactly do I change in the code and config?</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">The book’s own caveat</span>
+    <p>Part III summary: defences are “mitigations”, not fixes. They get bypassed, they get misconfigured, and they get removed by a later refactor. The <em>philosophies</em> — worst-case design, least authority, allowlists over blocklists, verify every privileged action — outlive any specific mitigation in this part.</p>
+  </div>
+
+  <div class="defender">
+    <span class="label">How to use this page</span>
+    <p>Chapters 20–27 build the <strong>process</strong>; 28–36 are the <strong>reference manual</strong> for those specific attacks. If you already know the attacks from the Part II page, jump straight to 28–36. If you own a codebase rather than a bug, read 24 and 27 first — they are the chapters that make the others stick.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 20 ================= -->
+<section id="ch20">
+  <h2><span class="num">Chapter 20</span> · Securing Modern Web Applications</h2>
+  <p class="oneliner">The whole SSDL in one chapter: architecture → review → discovery → analysis → management → regression tests → mitigation, applied to a castle you cannot fully wall.</p>
+
+  <p>The book’s central metaphor is a medieval castle. The core application code is the keep; the dependencies and integrations are the surrounding town; the kingdom is the whole surface area. In wartime you cannot fortify every entrance equally — you <strong>prioritise</strong>. That prioritisation is the security engineer’s job, and it is the reason the book starts with recon: you cannot prioritise what you have not mapped.</p>
+
+  <h3>The seven steps</h3>
+  <ul class="steps">
+    <li><b>Defensive architecture</b> — decide before writing code. “Most of software engineering is moving data from A to B; most of security engineering is securing it in transit and at rest.” Re-architecting after customers depend on a feature (their own stores, their own code) is brutally expensive.</li>
+    <li><b>Comprehensive code reviews</b> — every commit, ideally by a team other than the committer’s (conflict of interest). Four questions cover most of it: how is data transmitted? how is it stored? how is it presented when it reaches the client? what operations run on it when it reaches the server?</li>
+    <li><b>Vulnerability discovery</b> — the old way is a customer email or a public disclosure; the modern way is bug bounties, internal red/blue teams, third-party pen tests, and incentives for engineers to log what they find.</li>
+    <li><b>Vulnerability analysis</b> — triage. Risk comes from financial exposure, difficulty of exploitation, type of data, contracts, and mitigations already in place.</li>
+    <li><b>Vulnerability management</b> — track the fix to completion with deadlines derived from the risk score, and <em>add logging</em> for the flaw while it is still open. Companies have died because nobody noticed a known bug being exploited during the wait.</li>
+    <li><b>Regression testing</b> — one engineer at a large company told the author that roughly <strong>25% of their vulnerabilities were previously-closed bugs that regressed</strong>.</li>
+    <li><b>Mitigation strategies</b> — spread wide like a net, and go deep where the stakes are highest.</li>
+  </ul>
+
+  <div class="callout info">
+    <span class="label">Where Part I and II pay off</span>
+    <p>Recon tells you how your app looks to an attacker, so you know what to camouflage and what is easy to find. Offence tells you what a hacker will try, so you know which fix removes the most risk. Neither is required to read Part III — but both make the prioritisation obvious.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 21 ================= -->
+<section id="ch21">
+  <h2><span class="num">Chapter 21</span> · Secure Application Architecture</h2>
+  <p class="oneliner">NIST’s number is the whole argument: a flaw removed in the design phase costs <b>30–60× less</b> than the same flaw removed in production.</p>
+
+  <h3>Start from the requirements</h3>
+  <p>The book walks through MegaBank’s new merchandising store, MegaMerch, and reads the requirements as risk:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Requirement</th><th>What it tells you</th></tr></thead>
+      <tbody>
+        <tr><td>Accounts and sign-in</td><td>You are storing credentials → authentication, authorisation, session handling, data in transit</td></tr>
+        <tr><td>Full name, address, date of birth</td><td>You are storing PII → legal obligations, breach blast radius</td></tr>
+        <tr><td>Guests vs users</td><td>Two privilege tiers → authorisation bugs are now possible</td></tr>
+        <tr><td>Search</td><td>Probably a second database → sync, staleness, leaked metadata</td></tr>
+        <tr><td>Saved cards and bank accounts</td><td>You are storing financial data → the most regulated, most valuable data in the app</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>That reading is the entire technique: <em>business requirements are security requirements in disguise</em>. A feature request for “save my card for later” is also a request for a PCI-scoped data store.</p>
+
+  <h3>Data in transit: TLS</h3>
+  <p>SSL came from Netscape in the mid-1990s; TLS was defined in RFC 2246 in 1999 to fix its architectural issues, and the two cannot interoperate. The guidance is blunt: all traffic encrypted, HTTPS everywhere, and every major server has a one-line path to it.</p>
+  <figure>
+    <img src="@@FIG:hoff_21-1.jpg@@" alt="The Let's Encrypt homepage, a free automated and open certificate authority">
+    <figcaption><b>Figure 21-1 — Let’s Encrypt.</b> One of very few non-profit certificate authorities, and the reason “we can’t afford certificates” stopped being an excuse. Free, automated issuance removes the cost argument from the data-in-transit decision entirely.</figcaption>
+  </figure>
+
+  <h3>Credentials: entropy, not punctuation</h3>
+  <ul>
+    <li><strong>What matters is entropy</strong> — randomness and unpredictability — not length plus special characters. Common passwords are common: dictionary attacks, then combination rules, then brute force.</li>
+    <li><strong>Practical policy:</strong> reject the top-1000 password list, reject birthdates, first/last names and address parts. MegaMerch already collects those three fields, so it can check them cheaply.</li>
+    <li><strong>Never store plaintext.</strong> Hash on first sight. Hashes are irreversible (even staff cannot steal a password), fast to compute for comparison, and collision-free in practice (~1 in 10⁹ or better).</li>
+  </ul>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Storage</th><th>If the database leaks</th></tr></thead>
+      <tbody>
+        <tr><td>Plaintext</td><td>Every password compromised — and reused elsewhere</td></tr>
+        <tr><td>MD5</td><td>Some cracked from rainbow tables (precomputed hash→password)</td></tr>
+        <tr><td>BCrypt</td><td>Unlikely that any are cracked</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Three hashing families matter here:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Algorithm</th><th>Idea</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Unix <code>crypt</code></td><td>The old default</td><td>Designed for hardware that could do &lt;10 hashes/sec; modern hardware does tens of thousands. Effectively broken as a password store.</td></tr>
+        <tr><td>BCrypt</td><td>Blowfish + <code>crypt</code>, with a work factor</td><td>Gets <em>slower</em> as hardware gets faster — the key property. The book’s choice for MegaMerch.</td></tr>
+        <tr><td>PBKDF2</td><td>Key stretching: each iteration costs more</td><td>Not designed for passwords, but a fine fallback when BCrypt is unavailable. Set iterations to the maximum your hardware tolerates.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>MFA</h3>
+  <p>Password plus something else — an app-generated code, SMS, or a hardware token. Physical tokens are more secure but impractical to distribute to consumers, so app/SMS MFA is the realistic choice for an ecommerce site, and it is “an order of magnitude safer” than password-only. With no vulnerability in the MFA app or messaging protocol, remote login by anyone but the account owner is eliminated.</p>
+  <figure>
+    <img src="@@FIG:hoff_21-2.jpg@@" alt="Google Authenticator on the Google Play store">
+    <figcaption><b>Figure 21-2 — Google Authenticator.</b> The book’s example of the most common MFA app for Android and iOS: widely supported, with an open API for integrating into your own application. Free, standard, and the single highest-value authentication upgrade for most consumer apps.</figcaption>
+  </figure>
+
+  <h3>PII and financial data</h3>
+  <ul>
+    <li>Storing PII is a <strong>legal</strong> question per country, not just a technical one.</li>
+    <li>Assume breach: the format matters. Data that is easy to abuse when dumped is a liability even if the app is secure.</li>
+    <li>For smaller companies, the strongest move is often <strong>not storing it</strong> — outsource to a compliant specialist.</li>
+  </ul>
+
+  <h3>Search engines: the second database problem</h3>
+  <p>Search needs a different data shape than a general-purpose database, so most apps end up with a second store — and now two systems must stay in sync. Concrete failure modes the book lists: permissions updated in the primary but not the index; objects deleted in the primary but still indexed; metadata still searchable after the object is gone. All are <em>architecture</em> problems, and all are far cheaper to decide now.</p>
+  <figure>
+    <img src="@@FIG:hoff_21-3.jpg@@" alt="The Elasticsearch product page">
+    <figcaption><b>Figure 21-3 — Elasticsearch.</b> The largest open-source distributed search engine, built on Apache Solr, free and well documented. Convenient — which is exactly why the permissions-sync question has to be answered <em>before</em> you adopt it.</figcaption>
+  </figure>
+
+  <h3>Zero Trust Architecture</h3>
+  <p>The term appears in Stephen Paul Marsh’s 1994 doctoral thesis, vanished, and returned with NIST SP-800-207 in 2020. The core distinction:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Model</th><th>Rule</th><th>Failure</th></tr></thead>
+      <tbody>
+        <tr><td>Implicit trust</td><td>Trust based on proximity or role — inside the moat, past the firewall, previously authenticated</td><td>Attackers who swim the moat, or insiders whose status changed, are trusted by default</td></tr>
+        <tr><td>Explicit trust (“trust but verify”)</td><td>Every action that could lead to compromise is verified at the moment it happens</td><td>Costs latency and engineering effort — the trade you accept</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The book’s worked example is a fired admin, “Joe Admin”, whose tokens still have 48 hours left. The software checks only that the token is valid, not that Joe is still employed — so Joe keeps editing the books after being fired. Continuous authorisation, a zero-trust principle, closes it.</p>
+  <div class="callout info">
+    <span class="label">Why architecture is worth the money</span>
+    <p>Once customers build on insecure functionality, fixing it means building a secure equivalent <em>and</em> a migration plan; deep flaws can force rewrites of everything layered on top; and if the flaw was exploited or published, the cost includes real money and lost customers.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 22 ================= -->
+<section id="ch22">
+  <h2><span class="num">Chapter 22</span> · Secure Application Configuration</h2>
+  <p class="oneliner">Your delivery mechanism is somebody else’s browser. This chapter is about borrowing its security features instead of rebuilding them badly.</p>
+
+  <h3>Content Security Policy</h3>
+  <p>CSP is the browser’s main defence against browser-side attacks — XSS, data injection, phishing, framing, redirects. It is deliberately configurable, which means a strong policy and a weak one look almost the same in a code review. You can run a site with no CSP at all and never notice.</p>
+  <p><strong>Two ways to deploy it:</strong> a <code>Content-Security-Policy</code> response header (the common way), or a <code>&lt;meta http-equiv&gt;</code> tag. The old <code>X-Content-Security-Policy</code> and <code>X-Webkit-CSP</code> headers are deprecated.</p>
+  <div class="code">
+    <div class="bar"><span class="title">The meta-tag form of a CSP</span><span class="tag neutral">book code</span></div>
+<pre><code>&lt;meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; img-src data:" /&gt;</code></pre>
+  </div>
+  <p><strong>Structure:</strong> directives separated by semicolons; each directive gets a space-separated source list. <code>script-src scripts.mega-bank.com</code> means only scripts from that origin execute; everything else throws a console error.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Directive</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>default-src</code></td><td>Fallback for everything else — the single highest-value line in any policy</td></tr>
+        <tr><td><code>script-src</code></td><td>Which sources may supply JavaScript</td></tr>
+        <tr><td><code>sandbox</code></td><td>Creates a sandbox on load: no pop-ups, no scripts, no plug-ins</td></tr>
+        <tr><td><code>frame-ancestors</code></td><td>Who may frame you; <code>'none'</code> kills clickjacking</td></tr>
+        <tr><td><code>img-src</code></td><td>Image sources — <code>data:</code> is what allows base64 images</td></tr>
+        <tr><td><code>report-uri</code></td><td>Where CSP violations are reported</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Source-list values worth memorising: <code>*</code> = any URL except <code>blob</code>/<code>file</code>; <code>'none'</code> = nothing (and it must be alone or the whole policy fails); <code>data:</code> = base64 images; <code>https:</code> = HTTPS only; <code>'self'</code> = the page’s own origin.</p>
+  <div class="callout good">
+    <span class="label">The free win</span>
+    <p>Simply having <em>any</em> CSP blocks inline script and <code>eval()</code> by default — the two most popular XSS delivery mechanisms. No extra configuration required.</p>
+  </div>
+
+  <h3>Strict CSP: nonces and hashes</h3>
+  <p>If you genuinely need inline script, don’t reach for <code>'unsafe-inline'</code>. Use a strict policy instead:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Nonce-based strict CSP</span><span class="tag good">recommended</span></div>
+<pre><code>Content-Security-Policy:
+  script-src 'nonce-{RANDOM}' 'strict-dynamic';
+
+&lt;!-- every inline script must carry the current nonce --&gt;
+&lt;script src="..." nonce="123"&gt;alert()&lt;/script&gt;</code></pre>
+  </div>
+  <ul>
+    <li><strong>Nonce</strong> — a random value generated at runtime, injected into every script tag, checked before execution. Ideal for server-rendered pages, where a fresh nonce per load is trivial.</li>
+    <li><strong>Hash</strong> — a SHA-256 of each inline script listed in <code>script-src</code>. Better for cacheable pages/CDNs: a nonce can eventually be guessed or harvested from cache, while a SHA-256 collision is around 1 in 43 billion. The trade-off: adding script means editing the policy.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">The book’s secure-by-default starter policy</span><span class="tag good">use as a template</span></div>
+<pre><code>Content-Security-Policy
+  default-src: 'self';
+  script-src: 'self' 'nonce-jgoj23j2o3j2oij26jk2nkn26kjh23' 'strict-dynamic';
+  frame-ancestors: 'none';
+  img-src: data: https:;
+  report-uri: https://reporting.megabank.com</code></pre>
+  </div>
+
+  <h3>CORS and the Same Origin Policy</h3>
+  <p>CSP decides <em>what may execute</em>; CORS decides <em>what may be read</em>, and it acts earlier — before the response ever reaches the JS context. Both <code>fetch</code> and <code>XMLHttpRequest</code> obey the Same Origin Policy. Without SOP, any tab could make privileged requests to any other site, because the browser attaches cookies automatically — that is CSRF, in one sentence.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>Simple request</th><th>Preflighted request</th></tr></thead>
+      <tbody>
+        <tr><td>Methods</td><td>GET, HEAD, POST</td><td>Anything else (PUT, DELETE, …)</td></tr>
+        <tr><td>Headers</td><td>Only CORS-safelisted: Accept, Accept-Language, Content-Language, Content-Type</td><td>Any header, declared up front</td></tr>
+        <tr><td>Content-Type</td><td>Only <code>application/x-www-form-urlencoded</code>, <code>multipart/form-data</code>, <code>text/plain</code></td><td>Including <code>application/json</code></td></tr>
+        <tr><td>Mechanism</td><td>Browser sends <code>origin:</code>; server replies <code>access-control-allow-origin:</code></td><td>Browser sends an <code>OPTIONS</code> preflight with <code>access-control-request-method</code> and <code>-headers</code> first</td></tr>
+        <tr><td>On mismatch</td><td colspan="2">The response is withheld from the script and a CORS error appears in the console</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">CORS in Express — note the single allowed origin</span><span class="tag good">allowlist</span></div>
+<pre><code>const cors = require('cors');
+const corsOptions = {
+  origin: 'https://mega-bank.com'
+};
+
+app.get('/users/:id', cors(corsOptions), function (req, res, next) {
+  res.sendStatus(200);
+});</code></pre>
+  </div>
+  <p>The rule: least privilege. Never <code>*</code> on an endpoint that returns user data.</p>
+
+  <h3>The other headers</h3>
+  <ul>
+    <li><strong>HSTS</strong> — <code>Strict-Transport-Security: max-age=…; includeSubDomains; preload</code>. Better than a 301 redirect because the redirect itself is an HTTP request a MITM can intercept, and <code>preload</code> means browsers know before the first request.</li>
+    <li><strong>COOP</strong> — <code>Cross-Origin-Opener-Policy: same-origin</code> stops an opened tab from navigating back to the opener. This is the tabnabbing fix.</li>
+    <li><strong>CORP</strong> — <code>Cross-Origin-Resource-Policy</code>, the practical mitigation for Spectre-style cross-tab memory reads. Values: <code>same-origin</code> (best), <code>same-site</code>, <code>cross-origin</code> (worst).</li>
+    <li><strong>X-Content-Type-Options: nosniff</strong> — stops MIME sniffing, i.e. a non-executable type being upgraded into an executable one.</li>
+  </ul>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Legacy header</th><th>Modern replacement</th></tr></thead>
+      <tbody>
+        <tr><td><code>X-Frame-Options</code></td><td>CSP <code>frame-ancestors</code></td></tr>
+        <tr><td><code>X-XSS-Protection</code></td><td>Removed — browsers no longer scan for reflected XSS; CSP covers the sinks</td></tr>
+        <tr><td><code>Expect-CT</code></td><td>Removed — certificate transparency is default since May 2018</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td>Modern browsers default to safer behaviour; set <code>strict-origin-when-cross-origin</code> for legacy ones</td></tr>
+        <tr><td><code>X-Powered-By</code></td><td>Delete it — it fingerprints your server and version for free</td></tr>
+        <tr><td><code>X-Download-Options</code></td><td>Irrelevant — Internet Explorer only</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Cookies</h3>
+  <div class="code">
+    <div class="bar"><span class="title">A hardened session cookie</span><span class="tag good">recommended</span></div>
+<pre><code>Set-Cookie: auth_token=abc123; Secure; HttpOnly; SameSite=Strict; Path=/; Expires=Wed, 20 Dec 2025 01:01:00 GMT</code></pre>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Attribute</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>Secure</code></td><td>Only sent over HTTPS — blocks MITM theft</td></tr>
+        <tr><td><code>HttpOnly</code></td><td>Invisible to JavaScript — XSS can no longer read the session token</td></tr>
+        <tr><td><code>SameSite=Strict</code></td><td>Not sent on cross-site requests — the CSRF workhorse (values: Lax, Strict, None)</td></tr>
+        <tr><td><code>Path</code></td><td>Restricts where the cookie is sent, e.g. <code>path=/website</code></td></tr>
+        <tr><td><code>Expires</code></td><td>Forces discard at a timestamp</td></tr>
+        <tr><td><code>Domain</code></td><td><strong>Avoid.</strong> Adding it silently widens scope from <code>my-domain.com</code> to <code>*.my-domain.com</code> — and a single subdomain serving user script becomes an account-takeover path.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Testing is done with an intercepting proxy (Burp Suite, ZAP — with a local test certificate for local TLS/HTTP), or in DevTools → Application → Storage → Cookies, or by typing <code>document.cookie</code> in the console (note what is missing there — <code>HttpOnly</code> cookies).</p>
+
+  <h3>Framing and sandboxing third-party code</h3>
+  <p>Sometimes you must run someone else’s code in your page (MySpace-style customisation, partner integrations). Options, best isolation first:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Technique</th><th>Isolation</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td><code>&lt;iframe&gt;</code></td><td>Separate DOM + JS context; different origin adds SOP on top</td><td>Duplicated styling, POSTMessage-only communication, scaling pain, iframe escapes are P0 bugs the browser vendors fix for you</td></tr>
+        <tr><td><code>&lt;iframe sandbox&gt;</code></td><td>Forces a unique origin, blocks forms, scripts, plug-ins, parent access, autoplay, links out</td><td>Often too restrictive — but it is the first line of defence</td></tr>
+        <tr><td>Web Workers</td><td>Separate thread, no DOM access</td><td>Can still make cross-origin XHR — weaker than a cross-origin iframe</td></tr>
+        <tr><td>Subresource Integrity</td><td>Not isolation: verifies the file was not modified</td><td>You must regenerate the hash on every vendor update</td></tr>
+        <tr><td>Shadow Realms</td><td>New global object/intrinsics per realm; synchronous, no UI impact</td><td>Stage 3/4 TC39 at time of writing; shims today, browsers ~2025</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Integrity check on a third-party script</span><span class="tag good">recommended</span></div>
+<pre><code>&lt;script src="other-website.com/stuff.js"
+        integrity="sha384-NmJhYmViMzNiMmU1NzllMDMyODdl"
+        crossorigin="anonymous"&gt;&lt;/script&gt;</code></pre>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 23 ================= -->
+<section id="ch23">
+  <h2><span class="num">Chapter 23</span> · Secure User Experience</h2>
+  <p class="oneliner">The UI is where the app talks to a human — so it is where it accidentally tells an attacker things, and where it has the best chance of teaching the human to be safer.</p>
+
+  <h3>Information disclosure through error messages</h3>
+  <p>Designers rightly want detailed errors. Security wants silence. The book ranks five implementations:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Implementation</th><th>Security</th><th>Usability</th></tr></thead>
+      <tbody>
+        <tr><td>Reflect the server’s error message and code</td><td>Worst — leaks internals, and the leak changes as databases upgrade</td><td>Best</td></tr>
+        <tr><td>Reflect only if the message is on an allowlist</td><td>Good — the practical middle ground</td><td>Good</td></tr>
+        <tr><td>Client-side general message + server code</td><td>Fair</td><td>Good</td></tr>
+        <tr><td>Error code only</td><td>Good</td><td>Poor</td></tr>
+        <tr><td>Neither message nor code</td><td>Best (technically)</td><td>Worst — rarely the right answer</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The worked example: “the user Jonathan Smith could not be queried because the address 905 N. Main St. provided does not match the current file” becomes “The user could not be queried due to an address mismatch.” Same cause, no PII. Keep an allowlist of generic messages and return the closest match — and prefer <code>400 Bad Request</code> over richly specific codes so recon is harder (the book jokingly offers <code>418 I’m a teapot</code>, precisely because it means nothing anywhere).</p>
+
+  <h3>Enumeration</h3>
+  <p>One response leaks nothing. A thousand responses leak a lot.</p>
+  <div class="code">
+    <div class="bar"><span class="title">The two-outcome login that hands over a user list</span><span class="tag bad">the flaw</span></div>
+<pre><code>// result A: "wrong password"     → this username exists
+// result B: "user does not exist" → this username does not
+
+// attacker iterates leaked username lists from other breaches
+// → a spreadsheet of valid @megabank.com staff accounts
+// → then only the password is unknown</code></pre>
+  </div>
+  <p>Why this matters more than it looks: brute force is inaccurate, noisy and sometimes infeasible; enumeration turns “username + password” into “password for a known username”, which makes targeted methods (spear phishing) viable and undetectable. The book’s three defences:</p>
+  <ul>
+    <li><strong>Generic errors</strong> — one message for all auth failures (“authentication failed”), per OWASP.</li>
+    <li><strong>No guessable patterns</strong> — no <code>/api/1</code>, <code>/2</code>, <code>/3</code>; no user IDs derived from sign-up date or an incrementing counter.</li>
+    <li><strong>Rate limits</strong> on every endpoint that could be enumerated, sized to the upper bound of legitimate use.</li>
+  </ul>
+
+  <h3>Light patterns</h3>
+  <p>A <em>dark pattern</em> tricks the user into something they did not intend. The author’s coinage, a <em>light pattern</em>, gently nudges them toward safety.</p>
+  <figure>
+    <img src="@@FIG:hoff_23-1.jpg@@" alt="React documentation showing an UNSAFE_ prefixed lifecycle method">
+    <figcaption><b>Figure 23-1 — React’s <code>UNSAFE_</code> prefix.</b> A naming convention as a light pattern: the API still works, but every developer who touches it reads “unsafe” and is nudged to look for the safe alternative.</figcaption>
+  </figure>
+  <p>Two things matter about the design:</p>
+  <ul>
+    <li><strong>A link to documentation is not a light pattern</strong> — only a subset of users ever reads docs, and the link lives on a settings page they may never open.</li>
+    <li><strong>Put the nudge where the risk is.</strong> For a crypto wallet with an opt-in daily spend cap, don’t advertise the setting on the settings page — warn on <em>every outgoing transaction</em> that the cap is off and a typo is irreversible. Users convert far better on that framing than on “an attacker might take your funds”, which they cannot estimate.</li>
+  </ul>
+  <p>And the ordering: <strong>secure by default beats light patterns</strong>. Light patterns are for when you genuinely cannot force the safe choice.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 24 ================= -->
+<section id="ch24">
+  <h2><span class="num">Chapter 24</span> · Threat Modeling Applications</h2>
+  <p class="oneliner">Five documents, in order, that turn “what could go wrong?” from a meeting into a process — and a living record that survives the engineer who wrote it.</p>
+
+  <h3>What a threat model must achieve</h3>
+  <ul class="steps">
+    <li><b>Document knowledge</b> — one place that holds architecture plus security context.</li>
+    <li><b>Identify threat actors</b> — humans, insiders, <em>and machines</em>.</li>
+    <li><b>Identify risks (attack vectors)</b> — potential pathways, not yet vulnerabilities.</li>
+    <li><b>Identify mitigations</b> — what is already in place.</li>
+    <li><b>Identify the delta</b> — vectors without sufficient mitigation. <em>This</em> is the work list.</li>
+  </ul>
+  <div class="callout warn">
+    <span class="label">Why skipping the last two ruins it</span>
+    <p>A model with risks but no mitigations lists is not actionable — you may spend a sprint “fixing” something that was already mitigated, adding bugs and technical debt. And a model that is only a risk list is not a knowledge repository, so the next engineer starts from scratch.</p>
+  </div>
+
+  <h3>The worked example: MegaBank user reviews</h3>
+  <p>Holly Hacker, security engineer, models a new feature: authenticated users post a 0–5 score plus text; anyone can read reviews on “activate feature” pages.</p>
+
+  <h4>1. Logic design</h4>
+  <p>Functionality in plain language — the level a UX designer needs, higher than a technical design, lower than marketing. It is the step most often skipped and the only place logic vulnerabilities can later be spotted. Example logic flaw: a user bypassing the form to POST a score of 50, skewing every average and destroying trust in the reviews. Storing an integer is not a vulnerability — storing an <em>unbounded</em> integer in <em>this</em> feature is.</p>
+
+  <h4>2. Technical design</h4>
+  <p>Must be detailed enough to answer: which languages, databases, build tools, package managers, frameworks? which third-party services (in-network like S3, out-of-network like Datadog/CircleCI)? how does data flow (formats, encryption, protocols)? how are networks configured? what auth/authz controls exist? what is the schema, and which fields are regulated?</p>
+  <p>MegaBank’s: React client with <code>getReviews</code> and <code>createReview</code>; a GET against an EC2-hosted Express REST server; PostgreSQL behind it; session cookie checked against a session service; body-parser and cookie-parser via npm; TLS 1.3 with a Let’s Encrypt certificate; “all APIs also optionally queryable via GraphQL”.</p>
+  <p>Reading that description already yields findings: the rendering method is unspecified → possible XSS; the SQL construction is unspecified → SQLi risk; the “no reviews found for this feature” error leaks the existence of unreleased features. GraphQL adds a whole new class on its own.</p>
+
+  <h4>3. Threat actors</h4>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Actor</th><th>Powers and risk</th></tr></thead>
+      <tbody>
+        <tr><td>User admin</td><td>Admin UI with read/update on the database. Can steal PII and alter ratings. <strong>Usage is not logged — no accountability.</strong></td></tr>
+        <tr><td>Review aggregator script</td><td>Runs automatically, has database-admin access, cannot run Bash. If compromised: arbitrary queries. A <em>machine</em> actor.</td></tr>
+        <tr><td>Authenticated user</td><td>Can post, can read. Can bypass the form and POST malicious payloads directly.</td></tr>
+        <tr><td>Unauthenticated guest</td><td>Read-only. Low threat, except for DoS or circular-query abuse.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The key insight: <strong>the actor list must include internal, external and machine users</strong>, split into authenticated/unauthenticated where relevant. Internal users get phished, go rogue; machine users malfunction. Modelling only external humans is a best-case model, and security always works from worst case.</p>
+
+  <h4>4. Attack vectors</h4>
+  <p>Cross-analyse logic design × technical design × actors, and add severity. P0–P4, where P0 is highest.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Vector</th><th>Sev</th><th>Actor</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Improper validation — score</td><td>P1</td><td>All but guest</td><td>Out-of-range score skews aggregation</td></tr>
+        <tr><td>Information disclosure — featureID</td><td>P3</td><td>All</td><td>Error messages reveal unreleased/gated features</td></tr>
+        <tr><td>SQL injection</td><td>P0</td><td>All but guest</td><td>Improper handling of the POST payload</td></tr>
+        <tr><td>GraphQL circular / large queries</td><td>P1</td><td>All</td><td>Not prevented by rate limits; needs max query time</td></tr>
+        <tr><td>GraphQL introspection + errors</td><td>P1</td><td>All</td><td>Leaks server configuration</td></tr>
+        <tr><td>High-privilege user attacks</td><td>P0</td><td>Admin, aggregator</td><td>Privileged tokens with no monitoring: one compromise takes everything</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>5. Mitigations, then the delta</h4>
+  <p>Existing mitigations here: a validation engine rejecting non-integers and out-of-range scores; a SQL DSL that forces prepared statements. Removing the vectors those cover leaves four — information disclosure, the two GraphQL issues, and privileged-user attacks. Those get new mitigations:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Remaining vector</th><th>New mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>Information disclosure</td><td>Generic error messages that reveal nothing about data or app</td></tr>
+        <tr><td>GraphQL large/circular queries</td><td>Maximum compute time per query, on top of rate limits</td></tr>
+        <tr><td>GraphQL introspection/errors</td><td>Introspection off; never surface GraphQL’s own errors</td></tr>
+        <tr><td>High-privilege attacks</td><td>Scope tokens to the minimum required; log every privileged call <em>off-platform</em> so the privileged user cannot delete the logs; give the aggregator read on <code>score</code> and write on <code>aggregate score</code> only</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout good">
+    <span class="label">The rule the book states plainly</span>
+    <p>If an attack vector has no sufficient mitigation, <strong>the feature does not ship</strong>. And when scope changes later, reopen the model — update the knowledge, the actors, the vectors, the mitigations and the delta.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 25 ================= -->
+<section id="ch25">
+  <h2><span class="num">Chapter 25</span> · Reviewing Code for Security</h2>
+  <p class="oneliner">Architecture review first, code review second — and then read the code the way the client sees it, not the way the folder tree does.</p>
+
+  <p>Security code review belongs at the <strong>merge request</strong>, because that is the one moment the whole feature exists at once. Per-commit or pair-programming reviews give more depth for mission-critical work, but you never see the complete picture. “Move fast and break things” is not a licence to skip architecture review before code.</p>
+
+  <h3>The local flow</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Reviewing a branch from the terminal</span><span class="tag neutral">book code</span></div>
+<pre><code>git checkout main
+git pull origin main
+git checkout &lt;username&gt;/feature
+git diff origin/main...</code></pre>
+  </div>
+  <p>Web-based review tools (GitHub, GitLab, Bitbucket) are convenient but less capable than local tooling — which is why the book recommends pulling the branch.</p>
+  <figure>
+    <img src="@@FIG:hoff_25-1.jpg@@" alt="A GitHub commit view showing a diff with added meta tags">
+    <figcaption><b>Figure 25-1 — Web-based review.</b> GitHub’s diff view. Useful for conversation and approval; weaker than a local checkout for tracing data flow across files, which is what a security review actually needs.</figcaption>
+  </figure>
+
+  <h3>Archetypes versus logic</h3>
+  <p>A functionality review asks “does it meet the spec?”. A security review asks that <em>plus</em> “what can be done with it that the spec never imagined?”. For that you need three things about the feature: the users, the functionality, the business impact.</p>
+  <div class="two">
+    <div>
+      <h4>Archetypal</h4>
+      <p>XSS in a user post. Known, catalogued, and exactly what a scanner or checklist looks for.</p>
+    </div>
+    <div>
+      <h4>Business logic</h4>
+      <p>On MegaChat, an endpoint that accepts <code>isMember: true</code> lets a plain user upload video without a moderator’s approval — bypassing the paywall that exists because hosting is expensive.</p>
+    </div>
+  </div>
+
+  <h3>Where to start</h3>
+  <p>If you did not design the app, you do not know which components are high risk — so start where the client meets the server and let the code lead you:</p>
+  <ul class="steps">
+    <li><b>Client-side code</b> — learn the business logic and what users can actually do. This gives you the real surface area, the payloads, and whether there is more than one server.</li>
+    <li><b>The API layer those clients call</b> — trace each call, and note what it depends on.</li>
+    <li><b>Those dependencies</b> — databases, helper libraries, loggers, upload handlers, conversion libraries.</li>
+    <li><b>Everything exposed but not called</b> — APIs built for upcoming features, or accidentally public internals.</li>
+    <li><b>The rest</b> — now you know enough to prioritise by business risk instead of by folder name.</li>
+  </ul>
+  <p>Step 5 is genuinely easier than it sounds: you already read the code organically, so the tail is fast.</p>
+
+  <h3>Four anti-patterns to hunt</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Anti-pattern</th><th>Why it fails</th><th>The fix</th></tr></thead>
+      <tbody>
+        <tr><td>Blocklists</td><td>They only work with perfect knowledge of all present <em>and future</em> inputs — the hacker just buys another domain</td><td>Invert it: allowlist</td></tr>
+        <tr><td>Boilerplate code</td><td>Defaults are built for convenience, not security: MongoDB bound to the internet with no auth (thousands of databases held for ransom); Rails 404 pages leaking version; Ember’s default landing page in production</td><td>Evaluate and configure every default before shipping</td></tr>
+        <tr><td>Trust-by-default</td><td>One server user with logging + database + disk means one RCE owns all three</td><td>One user per module, each with only its own permissions</td></tr>
+        <tr><td>Client/server coupling</td><td>When the server parses HTML or shares auth logic with the template, it must defend against many languages and formats at once</td><td>Separate them; accept JSON only, never HTML</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Blocklist vs allowlist — the same function, inverted</span><span class="tag good">the fix</span></div>
+<pre><code>// fragile: only blocks what you already thought of
+const blocklist = ['http://www.evil.com', 'http://www.badguys.net'];
+const isDomainAccepted = function(domain) {
+  return !blocklist.includes(domain);
+};
+
+// durable: only allows what you reviewed
+const allowlist = ['https://happy-site.com', 'https://www.my-friends.com'];
+const isDomainAccepted = function(domain) {
+  return allowlist.includes(domain);
+};</code></pre>
+  </div>
+  <p>The practical answer to “allowlists are maintenance”: combine manual and automated effort — require integrating partners to submit a domain and business licence for review. Cheap to maintain, and a removed partner cannot simply re-enter.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 26 ================= -->
+<section id="ch26">
+  <h2><span class="num">Chapter 26</span> · Vulnerability Discovery</h2>
+  <p class="oneliner">Architecture and review catch most things. This chapter is about the ones that get through — and about finding them before your customers do.</p>
+
+  <h3>Three kinds of automation</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>Static analysis</th><th>Dynamic analysis</th><th>Regression tests</th></tr></thead>
+      <tbody>
+        <tr><td>Looks at</td><td>Source, unexecuted</td><td>Running code</td><td>A specific past bug</td></tr>
+        <tr><td>Runs</td><td>Linter locally; on commit/push in CI</td><td>In a production-like environment</td><td>Commit/push hook, else daily</td></tr>
+        <tr><td>Finds</td><td>Common mistakes (innerHTML, URL params into DOM, <code>setInterval</code> sinks, string-built queries, state-changing GETs, evil regex)</td><td>Real vulnerabilities, including side-effects like secrets left in memory</td><td>Re-introduction of a specific fixed flaw</td></tr>
+        <tr><td>Weakness</td><td>False positives; bad at dynamic languages like JS because types change at runtime</td><td>Cost, speed, needs licences and a prod-like stack</td><td>Only known bugs</td></tr>
+        <tr><td>Tools</td><td>Checkmarx (paid), PMD, Bandit, Brakeman (free)</td><td>IBM AppScan, Veracode (paid), Iroh (free)</td><td>Any framework — Jest is enough</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Static analysis can also enforce policy, not just find bugs: reject endpoints whose authorization function is not imported, or functions consuming user input that bypass the central validation library.</p>
+
+  <h3>The regression test, worked through</h3>
+  <p>Steve ships <code>GET /changeSubscriptionTier?newTier=…</code>. Jed sends him the link; clicking it changes Steve’s own subscription. A textbook CSRF. The fix: make it POST-only.</p>
+  <figure>
+    <img src="@@FIG:hoff_26-1.jpg@@" alt="The Jest testing framework README">
+    <figcaption><b>Figure 26-1 — Jest.</b> No security-specific framework is needed: any test runner that can reproduce the vulnerability can guard against it. Here the test asserts the endpoint accepts exactly one verb, and that verb is POST.</figcaption>
+  </figure>
+  <div class="code">
+    <div class="bar"><span class="title">The vulnerability regression test</span><span class="tag good">recommended</span></div>
+<pre><code>const testTierChange = function() {
+  requester.options('http://app.com/api/changeSubscriptionTier')
+    .on('response', function(res) {
+      if (!res.headers) { return tester.fail(); }
+
+      const verbs = res.headers['Allow'].split(',');
+      if (verbs.length &gt; 1) { return tester.fail(); }   // more than one verb
+      if (verbs[0] !== 'POST') { return tester.fail(); } // wrong verb
+    })
+    .on('error', function(err) { console.error(err); return tester.fail(); });
+};</code></pre>
+  </div>
+  <p>The only difference between a functional test and a security regression test is <em>why</em> it was written. They are so cheap that they are worth writing before a bug exists, for code where a small-looking change has a large blast radius.</p>
+
+  <h3>Finding bugs from outside your team</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Program</th><th>What it gives you</th><th>What it needs</th></tr></thead>
+      <tbody>
+        <tr><td>Responsible disclosure</td><td>A legal, public path for a user to report what they found — instead of suing them, which is what several large companies famously did</td><td>A defined scope of allowed testing, a submission format, and an embargo window before publication</td></tr>
+        <tr><td>Bug bounty</td><td>Cash for valid reports; converts researchers from a threat into a channel</td><td>Legal templates and triage — much easier now via HackerOne or Bugcrowd than building it in-house</td></tr>
+        <tr><td>Third-party pen test</td><td>Depth your own team cannot self-assess, and a firm can be pointed at specific modules</td><td>Scope, contracts, ideally access to source; target high-risk and newly written code pre-release</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <img src="@@FIG:hoff_26-2.jpg@@" alt="The HackerOne homepage">
+    <figcaption><b>Figure 26-2 — HackerOne.</b> The best-known bug bounty platform: legal templates plus submission and triage tooling, which is what turned bounties from a big-company project into something a small team can start.</figcaption>
+  </figure>
+  <div class="callout info">
+    <span class="label">Bounty hunter vs pen-test firm</span>
+    <p>Bounty hunters are mostly freelance testers: they work when they want and on what interests them. Firms can be directed at a specific area and given source code under NDA. Different tools; the book suggests using both.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 27 ================= -->
+<section id="ch27">
+  <h2><span class="num">Chapter 27</span> · Vulnerability Management</h2>
+  <p class="oneliner">Reproduce it, score it, fix it properly, then write the test that stops it coming back.</p>
+
+  <h3>Reproduce first</h3>
+  <p>Before spending a minute on a report, rebuild it in a staging environment that mirrors production — automated, because a hand-built staging environment rots. Mock users and mock objects are enough; real customers are not needed. Benefits: it confirms the report is real (a user “accidentally” making a photo public is a config issue, not a bug), it avoids paying a bounty for a false positive, and it tells you where in the code to look. Do this immediately and log the result.</p>
+
+  <h3>Score it: CVSS v3.1</h3>
+  <p>Free, widely available, and good at the common cases — criticised for rare, chained or unusual systems, which is why you build on top of it rather than worship it. Three sub-scores: <strong>Base</strong> (the vulnerability itself), <strong>Temporal</strong> (how it stands today), <strong>Environmental</strong> (what it means <em>here</em>). Most teams use base only.</p>
+  <figure>
+    <img src="@@FIG:hoff_27-1.jpg@@" alt="The NIST CVSS calculator showing base, temporal, environmental and overall scores">
+    <figcaption><b>Figure 27-1 — The CVSS calculator.</b> Enter eight base metrics and get a 0–10 number. The bars show the chain: base → temporal → environmental → overall (5.8 in this NIST screenshot). Free online calculators are enough to start.</figcaption>
+  </figure>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Base metric</th><th>Options</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Attack Vector (AV)</td><td>Network → Adjacent → Local → Physical</td><td>How the payload is delivered; network is worst</td></tr>
+        <tr><td>Attack Complexity (AC)</td><td>Low / High</td><td>Setup and variables outside the attacker’s control</td></tr>
+        <tr><td>Privileges Required (PR)</td><td>None / Low / High</td><td>Guest → normal user → admin</td></tr>
+        <tr><td>User Interaction (UI)</td><td>None / Required</td><td>Does someone have to click?</td></tr>
+        <tr><td>Scope (S)</td><td>Unchanged / Changed</td><td>Does the impact escape the vulnerable component?</td></tr>
+        <tr><td>Confidentiality (C)</td><td>None / Low / High</td><td>How much data exposure</td></tr>
+        <tr><td>Integrity (I)</td><td>None / Low / High</td><td>How much state can be changed</td></tr>
+        <tr><td>Availability (A)</td><td>None / Low / High</td><td>How much service is lost</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <img src="@@FIG:hoff_27-2.jpg@@" alt="CVSS base score metrics form with exploitability and impact sections">
+    <figcaption><b>Figure 27-2 — Base metrics.</b> The eight required inputs, split into exploitability (left: AV, AC, PR, UI, S) and impact (right: C, I, A). All eight must be set to produce a score.</figcaption>
+  </figure>
+  <p>Scores map to bands: <strong>0.1–4 low</strong>, <strong>4.1–6.9 medium</strong>, <strong>7–8.9 high</strong>, <strong>9+ critical</strong>.</p>
+  <p><strong>Temporal</strong> adjusts for the state of the world: Exploit Code Maturity (unproven → high), Remediation Level (official fix → unavailable), Report Confidence (unknown → confirmed).</p>
+  <figure>
+    <img src="@@FIG:hoff_27-3.jpg@@" alt="CVSS temporal score metrics form">
+    <figcaption><b>Figure 27-3 — Temporal metrics.</b> Three inputs describing how exploitable and how fixable the issue is <em>right now</em>: is there working exploit code, is there a fix, and how good is the report?</figcaption>
+  </figure>
+  <p><strong>Environmental</strong> re-scores everything in your context by adding Confidentiality / Integrity / Availability <em>requirements</em> — a health or government app scores higher than a public brochure site.</p>
+  <figure>
+    <img src="@@FIG:hoff_27-4.jpg@@" alt="CVSS environmental score metrics form with modified base metrics and requirements">
+    <figcaption><b>Figure 27-4 — Environmental metrics.</b> All eight base inputs again (as “modified” values) plus the three requirement modifiers on the right. This is where a generic score becomes <em>your</em> score.</figcaption>
+  </figure>
+
+  <h3>Fix it properly</h3>
+  <ul>
+    <li>Scoring prioritises, but it is not the only input — contracts and business relationships count too.</li>
+    <li>Prefer a <strong>permanent, application-wide</strong> fix. If you cannot, ship the temporary fix <em>and open a new bug</em> for the remaining surface, with a score.</li>
+    <li><strong>Never close a bug on a partial fix</strong> without that follow-up ticket. Early closure loses the reproduction knowledge, and unreported variants may still be live.</li>
+    <li><strong>Every closed security bug ships with a regression test.</strong> Their value compounds as the codebase grows.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CH 28 ================= -->
+<section id="ch28">
+  <h2><span class="num">Chapter 28</span> · Defending Against XSS Attacks</h2>
+  <p class="oneliner">The one rule: <b>user data may enter the DOM only as text</b> — and when that is impossible, only after real sanitisation.</p>
+
+  <p>Start with the coding rule the book proposes for teams:</p>
+  <div class="callout good">
+    <span class="label">Two versions of the rule</span>
+    <p><strong>Simple:</strong> “Don’t allow any user-supplied data into the DOM — except as strings.”<br>
+    <strong>Realistic:</strong> “Never allow any <em>unsanitised</em> user-supplied data into the DOM.”</p>
+  </div>
+  <figure>
+    <img src="@@FIG:hoff_28-1.jpg@@" alt="Flow diagram: user input either appended as text (safe) or as DOM (compromised)">
+    <figcaption><b>Figure 28-1 — The fork every XSS defence turns on.</b> User text enters the UI, JavaScript appends it: as <em>text</em> → safe; as <em>DOM</em> → compromised. Almost all XSS lives on the right-hand branch.</figcaption>
+  </figure>
+
+  <h3>Checking that something is string-like</h3>
+  <div class="code">
+    <div class="bar"><span class="title">isString covers strings but rejects safe numbers — so go one level up</span><span class="tag neutral">book code</span></div>
+<pre><code>const isString = function(x) {
+  if (typeof x === 'string' || x instanceof String) { return true; }
+  return false;
+};
+
+// numbers are also safe to inject, so accept "string-like"
+const isStringLike = function(x) {
+  try {
+    return JSON.stringify(JSON.parse(x)) === x;
+  } catch (e) {
+    console.log('not string-like');
+  }
+};</code></pre>
+  </div>
+  <p>The <code>JSON.parse</code> round-trip works because only strings and numbers survive it — functions and complex objects do not fit JSON.</p>
+
+  <h3>innerText over innerHTML</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Same assignment, two very different outcomes</span><span class="tag good">safe vs</span></div>
+<pre><code>const userString = '&lt;strong&gt;hello, world!&lt;/strong&gt;';
+
+// tags become DOM → script tags would execute
+div.innerHTML = userString;
+
+// tags stay literal text → rendered, not executed
+div.innerText = userString;</code></pre>
+  </div>
+  <p>Caveat the book states clearly: <code>innerText</code>’s sanitisation is <strong>not fail-safe</strong>. Implementations differ per browser, and bypasses are documented. It is the right default, not a guarantee.</p>
+
+  <h3>When you must allow some HTML</h3>
+  <p>If you need <code>&lt;strong&gt;</code> and <code>&lt;i&gt;</code> but not <code>&lt;script&gt;</code>, sanitisation is genuinely hard — the DOM spec is enormous. Blocking quotes and script tags is not enough:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Two payloads with no script tag and no quotes</span><span class="tag bad">payloads</span></div>
+<pre><code>&lt;a href="javascript:alert(document.cookie)"&gt;click me&lt;/a&gt;
+
+&lt;a href="javascript:alert(String.fromCharCode(88,83,83))"&gt;click me&lt;/a&gt;</code></pre>
+  </div>
+  <p>The <code>javascript:</code> pseudo-scheme executes on navigation; <code>String.fromCharCode</code> builds the string without any quote characters. This is exactly the class of bypass the Part II page showed in mXSS — sanitisation is a library problem, not a regex problem. Use DOMPurify (or a maintained equivalent), keep it patched, and pair it with CSP.</p>
+
+  <h3>The sink list</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Sink</th><th>Why it is dangerous</th><th>Use instead</th></tr></thead>
+      <tbody>
+        <tr><td><code>innerHTML</code> / <code>outerHTML</code></td><td>Parses the string as DOM</td><td><code>textContent</code> / <code>innerText</code></td></tr>
+        <tr><td><code>document.write</code> / <code>writeln</code></td><td>Same, and it can rewrite the whole document</td><td>DOM APIs</td></tr>
+        <tr><td><code>DOMParser.parseFromString</code></td><td>Turns arbitrary text into structured nodes, script included</td><td><code>createElement</code> + <code>appendChild</code> — you control structure, payload controls only content</td></tr>
+        <tr><td><code>Blob</code> + <code>createObjectURL</code></td><td>Arbitrary bytes, then loaded as a script</td><td>Do not create blobs from user data</td></tr>
+        <tr><td><code>SVG</code></td><td>XML-derived, so <code>&lt;script&gt;</code> inside it runs; <code>onload</code> works too</td><td>Rasterise untrusted SVG, or serve from a sandboxed origin</td></tr>
+        <tr><td><code>document.implementation</code></td><td>Can construct whole documents</td><td>Do not use with user data</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">The safe way to build DOM from data</span><span class="tag good">recommended</span></div>
+<pre><code>// risky: the payload decides the structure
+const parser = new DOMParser();
+const html = parser.parseFromString('&lt;script&gt;alert("hi");&lt;/script&gt;');
+
+// safe: you decide the structure, the payload only fills a text node
+const el = document.createElement('div');
+el.appendChild(document.createTextNode(userText));</code></pre>
+  </div>
+
+  <h3>Navigating with user input</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Borrow the browser’s URL filtering instead of writing your own</span><span class="tag good">recommended</span></div>
+<pre><code>const userLink = '&lt;script&gt;alert("hi")&lt;/script&gt;';
+
+// risky: raw concatenation into a URL
+window.location.href = `https://mywebsite.com/${userLink}`;
+
+// safe: let an anchor tag normalise and filter it first
+const dummy = document.createElement('a');
+dummy.href = userLink;
+window.location.href = `https://mywebsite.com/${dummy.a}`;
+// → https://my-website.com/%3Cscript%3E...  (encoded)
+
+// or encode explicitly
+encodeURIComponent('&lt;strong&gt;test&lt;/strong&gt;'); // %3Cstrong%3Etest%3C%2Fstrong%3E</code></pre>
+  </div>
+  <p>Two caveats: <code>encodeURIComponent</code> cannot encode a whole URL (the scheme and host must stay readable), and these helpers are well-tested but not mathematically unbypassable — which is why CSP sits behind them.</p>
+
+  <h3>HTML entity encoding</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Character</th><th>Entity</th></tr></thead>
+      <tbody>
+        <tr><td><code>&amp;</code></td><td><code>&amp;amp;</code></td></tr>
+        <tr><td><code>&lt;</code></td><td><code>&amp;lt;</code></td></tr>
+        <tr><td><code>&gt;</code></td><td><code>&amp;gt;</code></td></tr>
+        <tr><td><code>"</code></td><td><code>&amp;#034;</code></td></tr>
+        <tr><td><code>'</code></td><td><code>&amp;#039;</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout warn">
+    <span class="label">Where entity encoding does nothing</span>
+    <p>It protects content injected into an HTML element body. It does <strong>not</strong> protect content inside <code>&lt;script&gt;</code>, inside CSS, or inside a URL — different parsing rules, different escaping. Context-free encoding is how well-meaning teams still ship XSS.</p>
+  </div>
+
+  <h3>CSS XSS</h3>
+  <p>User-uploaded stylesheets are an attack surface because CSS can make requests. Attribute selectors plus <code>background: url()</code> leak form state:</p>
+  <div class="code">
+    <div class="bar"><span class="title">A stylesheet that exfiltrates an income field</span><span class="tag bad">the attack</span></div>
+<pre><code>#income[value="&gt;100k"] {
+  background: url("https://www.hacker.com/incomes?amount=gte100k");
+}</code></pre>
+  </div>
+  <p>Defences in order of preference: <strong>disallow user CSS</strong>; else let users set specific fields and generate the stylesheet yourself; sanitising every URL-bearing CSS attribute is the hardest option and the one most likely to miss a case.</p>
+
+  <h3>CSP for XSS</h3>
+  <div class="code">
+    <div class="bar"><span class="title">script-src: shrinking the set of code that can run</span><span class="tag good">recommended</span></div>
+<pre><code>Content-Security-Policy: script-src 'self' https://api.mega-bank.com</code></pre>
+  </div>
+  <ul>
+    <li>Wildcards (<code>*.mega-bank.com</code>) are risky because a future subdomain that hosts user uploads becomes an XSS entry point.</li>
+    <li>Inline script and <code>eval</code> are blocked by default — do not add <code>'unsafe-inline'</code> or <code>'unsafe-eval'</code> unless there is truly no alternative.</li>
+    <li>If an <code>eval</code>-like pattern is in use, rewrite it. Passing a function instead of a string is safer and clearer:</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">Removing a string-evaluated callback</span><span class="tag good">the fix</span></div>
+<pre><code>// risky: the message is interpreted as code
+setTimeout(`window.alert(${message});`, minutes * 60 * 1000);
+
+// safe: no string is ever evaluated
+setTimeout(function() { alert(message); }, minutes * 60 * 1000);</code></pre>
+  </div>
+  <p>Implement CSP from day one if you know your scripts and APIs — the policy is easy to change later, but a site that grew up without one has an enormous backlog of inline handlers to fix. Deploy via header or <code>&lt;meta http-equiv&gt;</code>.</p>
+  <div class="callout warn">
+    <span class="label">The one gap to remember</span>
+    <p>CSP is a great first measure against classic XSS, but <strong>it does not protect you from DOM XSS</strong> — the script is already in your page, doing your own DOM writes. DOM XSS needs the coding rules above, and the client is almost always the right place to enforce them, since XSS only exists if it executes in a client.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 29 ================= -->
+<section id="ch29">
+  <h2><span class="num">Chapter 29</span> · Defending Against CSRF Attacks</h2>
+  <p class="oneliner">Three layers, in increasing strength: <b>never change state on GET</b> → <b>verify the origin</b> → <b>require a token</b>.</p>
+
+  <h3>Layer 1: keep GET stateless</h3>
+  <p>GET requests are the easiest CSRF delivery — a link, an image, a video source. So GET must never modify server state.</p>
+  <div class="code">
+    <div class="bar"><span class="title">One endpoint vs two — the architecture-level fix</span><span class="tag bad">vulnerable</span></div>
+<pre><code>// risky: a GET with optional update — one image tag is enough
+const user = function(req, res) {
+  getUserById(req.query.id).then((user) =&gt; {
+    if (req.query.updates) { user.update(req.updates); }
+    return res.json(user);
+  });
+};
+
+// https://&lt;url&gt;/user?user=123&amp;updates=email:hacker   ← CSRF</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Split it: read over GET, write over POST</span><span class="tag good">the fix</span></div>
+<pre><code>// GET — read only
+const getUser = function(req, res) {
+  getUserById(req.query.id).then((user) =&gt; res.json(user));
+};
+
+// POST — state change, and now token-checkable
+const updateUser = function(req, res) {
+  getUserById(req.query.id).then((user) =&gt; {
+    user.update(req.updates).then((updated) =&gt; {
+      if (!updated) { return res.sendStatus(400); }
+      return res.sendStatus(200);
+    });
+  });
+};</code></pre>
+  </div>
+  <p>POST alone is not a fix — it only removes the trivial link/image attack. Which is why you keep going.</p>
+
+  <h3>Layer 2: header verification</h3>
+  <p>JavaScript cannot set <code>Origin</code> or <code>Referer</code> in major browsers, so a browser-supplied value is hard to spoof:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Header</th><th>Sent on</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>Origin</code></td><td>POST requests</td><td><code>Origin: https://www.mega-bank.com:80</code></td></tr>
+        <tr><td><code>Referer</code></td><td>All requests — except when <code>rel="noreferrer"</code></td><td><code>Referer: https://www.mega-bank.com:80</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Checking both headers against the allowlist of your own origins</span><span class="tag good">recommended</span></div>
+<pre><code>const validLocations = [
+  'https://www.mega-bank.com',
+  'https://api.mega-bank.com',
+  'https://portal.mega-bank.com'
+];
+
+const validateHeadersAgainstCSRF = function(headers) {
+  const origin = headers.origin;
+  const referer = headers.referer;
+  if (!origin || !referer) { return false; }              // missing → reject
+  if (!validLocations.includes(origin) ||
+      !validLocations.includes(referer)) { return false; }
+  return true;
+};</code></pre>
+  </div>
+  <div class="callout warn">
+    <span class="label">Where this layer fails</span>
+    <p>If an attacker has an XSS <em>on one of your allowlisted origins</em>, the request genuinely comes from your own site. On a site with user-generated content this can make header checks worthless — which is the argument for tokens as the primary defence and headers as the cheap first filter.</p>
+  </div>
+
+  <h3>Layer 3: CSRF tokens</h3>
+  <figure>
+    <img src="@@FIG:hoff_29-1.jpg@@" alt="Two flows side by side: legitimate request carrying a CSRF token succeeds, attacker request without a token is blocked">
+    <figcaption><b>Figure 29-1 — CSRF tokens.</b> Left: server issues a token with the page, the client returns it with the request, the server validates and responds. Right: the attacker’s crafted request has no valid token because it did not originate from the user, so the server blocks it. This is the most effective and reliable CSRF defence.</figcaption>
+  </figure>
+  <ol>
+    <li>The server sends a cryptographically random token — per session, or per request.</li>
+    <li>Every form and every AJAX call returns it; the server checks that it is live, authentic and unmanipulated. Failure is logged and rejected.</li>
+    <li>Because the token is per-user and per-session, an attack must obtain a fresh token <em>and</em> target one specific user — and by the time a victim clicks a link, the token may already have expired.</li>
+  </ol>
+  <p>For stateless APIs (don’t give up statelessness for this), make the token self-contained: <strong>user id + timestamp + server-keyed nonce</strong>, encrypted. Validated server-side without a session store, and cheaper than session management at scale.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Decoding a stateless token: who, when, and is the nonce ours</span><span class="tag good">recommended</span></div>
+<pre><code>const validateCSRFToken = function(token, user) {
+  const text_token = crypto.decrypt(token);
+  const user_id = text_token.split(':')[0];
+  const date    = text_token.split(':')[1];
+  const nonce   = text_token.split(':')[2];
+
+  const validUser  = (user_id === user.id);
+  const validDate  = dateTime.lessThan(1, 'week', date);
+  const validNonce = crypto.validateNonce(user_id, date, nonce);
+
+  return validUser &amp;&amp; validDate &amp;&amp; validNonce;
+};</code></pre>
+  </div>
+
+  <h3>Put it in middleware, not in each route</h3>
+  <div class="code">
+    <div class="bar"><span class="title">One shield for every route</span><span class="tag good">recommended</span></div>
+<pre><code>const CSRFShield = function(req, res, next) {
+  if (!validateHeaders(req.headers, req.method) ||
+      !validateCSRFToken(req.csrf, session.currentUser)) {
+    logger.log(req);
+    return res.sendStatus(401);
+  }
+  return next();
+};</code></pre>
+  </div>
+  <p>Application-wide is the whole point: <em>the weakest link breaks the chain</em>, and one forgotten route is enough. On the client, make token attachment automatic — proxy <code>XMLHttpRequest</code> or wrap it in a request library that injects the token per verb. Relying on developers to remember is a security flaw with extra steps.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 30 ================= -->
+<section id="ch30">
+  <h2><span class="num">Chapter 30</span> · Defending Against XXE</h2>
+  <p class="oneliner">One line of parser configuration — which is exactly why it is embarrassing that XXE is still everywhere.</p>
+
+  <figure>
+    <img src="@@FIG:hoff_30-1.jpg@@" alt="Flow diagram: an XML payload with XXE reaches a parser; improper config reflects server resources, proper config rejects the entity tag">
+    <figcaption><b>Figure 30-1 — The whole XXE defence.</b> Same payload, two configurations: improper config exposes server files, proper config rejects the entity tag outright. There is no clever middle ground and no complex mitigation chain — just configure the parser.</figcaption>
+  </figure>
+
+  <div class="code">
+    <div class="bar"><span class="title">Disabling DOCTYPEs in a Java XML parser</span><span class="tag good">the fix</span></div>
+<pre><code>factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);</code></pre>
+  </div>
+  <div class="callout warn">
+    <span class="label">Check, don’t assume</span>
+    <p>OWASP flags Java parsers specifically because many of them have XXE <em>enabled by default</em>. Some languages and parsers disable it by default — but the book’s instruction is explicit: read the parser’s API documentation and verify. A default is not a guarantee, especially after a dependency upgrade.</p>
+  </div>
+
+  <h3>Or remove the format entirely</h3>
+  <p>If the XML is just carrying structured data between your own systems, replace it with JSON and the entire attack class disappears.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Category</th><th>XML</th><th>JSON</th></tr></thead>
+      <tbody>
+        <tr><td>Payload size</td><td>Large</td><td>Compact</td></tr>
+        <tr><td>Spec complexity</td><td>High</td><td>Low</td></tr>
+        <tr><td>Ease of use</td><td>Complex parsing</td><td>Native for JavaScript</td></tr>
+        <tr><td>Metadata support</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Rendering / HTML-like structure</td><td>Easy</td><td>Difficult</td></tr>
+        <tr><td>Mixed content</td><td>Supported</td><td>Unsupported</td></tr>
+        <tr><td>Schema validation</td><td>Supported</td><td>Unsupported</td></tr>
+        <tr><td>Object mapping</td><td>None</td><td>JavaScript</td></tr>
+        <tr><td>Readability</td><td>Low</td><td>High</td></tr>
+        <tr><td>Comments</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Security</td><td>Lower</td><td>Higher</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Choose JSON for lightweight structured data consumed by JavaScript; keep XML where the payload must eventually be <em>rendered</em> (SVG, documents, XML-derived formats) or where rigid schema validation is a requirement. YAML, BSON and EDN are viable alternatives but deserve their own analysis — several have their own deserialisation pitfalls.</p>
+
+  <h3>Why it is worth the paragraph</h3>
+  <p>XXE is a “gateway” attack: it starts read-only and hands the attacker a recon platform for the server’s filesystem, which is often enough to reach credentials, keys and configs, and from there code execution. Cheap to fix, expensive to ignore — hence it stays in the top tier of the OWASP list.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 31 ================= -->
+<section id="ch31">
+  <h2><span class="num">Chapter 31</span> · Defending Against Injection</h2>
+  <p class="oneliner">Set the query’s intent before any user data exists. Everything else in this chapter is a fallback.</p>
+
+  <h3>Finding it first</h3>
+  <p>Injection lives on the server, past routing, so the client is not worth searching. But do not skip “analytics” or similar service folders: if data persists across devices and sessions it is in memory, on disk, or in a database. And an application often has <strong>several</strong> databases, so you need generic searches that catch each dialect — including DSLs that generate SQL for you.</p>
+  <div class="code">
+    <div class="bar"><span class="title">In Node, the import is the reliable starting point</span><span class="tag neutral">book code</span></div>
+<pre><code>const sql = require('mssql');
+// OR
+const mysql = require('mysql');</code></pre>
+  </div>
+  <p>Both adapters end in <code>.query(x)</code>, which makes grepping practical. If the module is injected globally or inherited from a base class, the search is harder — one more argument for explicit imports.</p>
+
+  <h3>Prepared statements</h3>
+  <p>Compile the query with placeholders first, <em>then</em> supply values. The two-step ordering is the whole defence: intent is fixed before any user data is considered, so a <code>SELECT</code> can never become a <code>DELETE</code>, and an appended second statement never compiles.</p>
+  <div class="code">
+    <div class="bar"><span class="title">MySQL prepared statement</span><span class="tag good">the fix</span></div>
+<pre><code>PREPARE q FROM 'SELECT name, barCode from products WHERE price &lt;= ?';
+SET @price = 12;
+EXECUTE q USING @price;
+DEALLOCATE PREPARE q;
+
+-- even if @price were  '5; UPDATE users WHERE id = 123 SET balance = 10000'
+-- nothing extra fires: the statement was already compiled</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">What not to do — the same query as string concatenation</span><span class="tag bad">vulnerable</span></div>
+<pre><code>'SELECT name, barcode from products WHERE price &lt;= ' + price + ';'</code></pre>
+  </div>
+  <p>The only trade-off is a second round trip to the database, usually negligible. Support is near-universal: MySQL, Oracle, PostgreSQL, SQL Server.</p>
+
+  <h3>Database-specific escaping (when you genuinely cannot parameterise)</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Platform</th><th>Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Oracle (Java)</td><td><code>ESAPI.encoder().encodeForSQL(new OracleCodec(), str);</code></td></tr>
+        <tr><td>MySQL</td><td><code>SELECT QUOTE('test''case');</code> — escapes backslash, single quote, NULL</td></tr>
+        <tr><td>MySQL (extended)</td><td><code>mysql_real_escape_string()</code> — also double quotes, <code>\n</code>, <code>\r</code></td></tr>
+        <tr><td>SQL Server / SOQL</td><td>Equivalent built-in encoder functions</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The book is careful here: this is a <strong>mitigation, not a defence</strong>. Use it only on queries that cannot be parameterised.</p>
+
+  <h3>Non-SQL injection: same idea, broader surface</h3>
+  <p>High-risk targets to audit, from the book’s list:</p>
+  <ul>
+    <li>Task schedulers</li>
+    <li>Compression / optimisation libraries (ImageMagick, FFMPEG — see Chapter 13)</li>
+    <li>Remote backup scripts</li>
+    <li>Databases</li>
+    <li>Loggers</li>
+    <li>Any call to the host OS</li>
+    <li>Any interpreter or compiler</li>
+  </ul>
+  <p>And remember: dependencies bring their own subdependencies, which may land in any of those categories without appearing in your diff.</p>
+
+  <h3>Least authority</h3>
+  <figure>
+    <img src="@@FIG:hoff_31-1.jpg@@" alt="Flow diagram: a request with unexpected commands reaches a CLI; with least authority only the CLI process is compromised, without it the entire system is">
+    <figcaption><b>Figure 31-1 — Least authority as a blast radius control.</b> The injection succeeds either way; what changes is the damage. The CLI runs as itself → one process is compromised. The CLI runs as admin → the whole system is. This is the argument for one operating-system user per module.</figcaption>
+  </figure>
+  <p>A backup CLI is the book’s example: built with least authority, a compromised CLI cannot reach the rest of the application; running as admin, one injection exposes the server.</p>
+
+  <h3>Allowlist the commands</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Passing user input straight to a CLI — the architectural mistake</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const postCommands = function(req, res) {
+  cli.run(req.body.commands);   // the client now owns the CLI's full scope
+};</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Allowlisting the verbs</span><span class="tag good">the fix</span></div>
+<pre><code>const commands = ['print', 'cut', 'copy', 'paste', 'refresh'];
+
+const postCommands = function(req, res) {
+  const userCommands = req.body.commands;
+  userCommands.forEach((c) =&gt; {
+    if (!commands.includes(c)) { return res.sendStatus(400); }
+  });
+  cli.run(userCommands);
+};</code></pre>
+  </div>
+  <p>The book calls this “quick and dirty” and says so honestly: it does not constrain order or frequency, both of which can still combine into unintended functionality. It does prevent commands that were never meant for the client. Allowlist over blocklist, always — because a future release adds a command your blocklist does not know about.</p>
+  <div class="callout good">
+    <span class="label">The architectural statement</span>
+    <p>A security-first architecture <strong>never lets a client supply a query or command that executes on the server</strong>. If user input must translate into server operations, map it to an allowlisted set of operations that a security review has already approved.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 32 ================= -->
+<section id="ch32">
+  <h2><span class="num">Chapter 32</span> · Defending Against DoS</h2>
+  <p class="oneliner">You cannot detect what you do not measure — and DoS is the one attack family where the countermeasures can hurt real users.</p>
+
+  <h3>Start with logging</h3>
+  <p>Log every request with its response time, and log async job-style functions separately (backups, generators) — those produce no response, so a hang is invisible otherwise. Without this, a past DoS through a legitimate channel is simply not discoverable.</p>
+  <p>Then model the four outcomes the book lists from Chapter 14: exhaust server resources, exhaust client resources, request unavailable resources, deny access to resources.</p>
+
+  <h3>Regex DoS</h3>
+  <ul>
+    <li><strong>Know the shape:</strong> significant backtracking against a repeated group — <code>(a[ab]*)+</code>, where <code>+</code> demands all matches and <code>*</code> matches the subexpression maximally.</li>
+    <li><strong>Catch it in review or with a linter.</strong> This is one place where tooling genuinely beats eyeballs: scanning regex for malicious patterns, or timing them against crafted inputs, is faster and less error-prone than reading them.</li>
+    <li><strong>Never accept user-supplied regex.</strong> The book’s image: walking through a minefield hoping you memorised the safe path. Also check integrations — a dependency with a user-supplied regex is just as bad.</li>
+  </ul>
+
+  <h3>Logical DoS</h3>
+  <p>Harder, because it is a matter of degree. Compare to XSS: binary, you either have it or you do not. DoS is a scale — so rank exposed functionality as <strong>high / medium / low risk</strong> rather than vulnerable/secure, and identify where critical resources are consumed. A powerful desktop may never notice a client-side function that freezes an old phone.</p>
+
+  <h3>DDoS</h3>
+  <p>Cannot be prevented; can be mitigated.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Mitigation</th><th>How it works</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr><td>Bandwidth management / scrubbing service</td><td>Vendor analyses each packet and drops traffic matching malicious patterns before it reaches you</td><td>Recurring cost; vendors see your traffic</td></tr>
+        <tr><td>Blackholing</td><td>Route suspicious traffic to a server that looks alive and does nothing; real traffic goes to the real server</td><td>Misfires route real users into the hole; good for small attacks only</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <img src="@@FIG:hoff_32-1.jpg@@" alt="Two flows comparing a legitimate request reaching the web server with a malicious request redirected to a black hole">
+    <figcaption><b>Figure 32-1 — Blackholing.</b> Legitimate request → web server → real response. Malicious request → redirected at the routing level → black hole → nothing happens and no significant compute is spent. The caveat printed on the figure is the important part: <em>a filtering algorithm affects a percentage of real users</em>.</figcaption>
+  </figure>
+  <div class="callout warn">
+    <span class="label">The oversensitivity trap</span>
+    <p>Every aggressive DoS filter blocks some legitimate traffic. Get deep metrics on how your real users behave <em>before</em> you turn the sensitivity up — otherwise the defence becomes the outage.</p>
+  </div>
+  <p>And a blunt piece of advice worth quoting: even if you do not expect to be a target, implement anti-DoS mitigations once you can afford them.</p>
+</section>
+
+<hr>
+
+<!-- ================= CH 33 ================= -->
+<section id="ch33">
+  <h2><span class="num">Chapter 33</span> · Defending Data and Objects</h2>
+  <p class="oneliner">The shortest chapter in Part III, and the best return per line: allowlist the fields, allowlist the ids, and use a serializer that is not hand-rolled.</p>
+
+  <h3>Mass assignment</h3>
+  <div class="code">
+    <div class="bar"><span class="title">The pattern to eliminate: trust the whole object</span><span class="tag bad">vulnerable</span></div>
+<pre><code>app.post("updatePlayerData", function(req, res, next) {
+  if (!!req.body.data) {
+    db.update(session.currentUser, req.body.data);  // every key the client sent
+    return res.sendStatus(200);
+  } else {
+    return res.sendStatus(400);
+  }
+});</code></pre>
+  </div>
+  <p>Two acceptable fixes:</p>
+  <div class="code">
+    <div class="bar"><span class="title">1. Field allowlist — cheap</span><span class="tag good">the fix</span></div>
+<pre><code>const allowlist = ["hp", "location"]; // only these two fields may be updated</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">2. Data Transfer Object — stronger</span><span class="tag good">the fix</span></div>
+<pre><code>const DTO = function(hp, location) {
+  this.hp = hp;
+  this.location = location;
+};
+// construct from request data; anything else is dropped by design</code></pre>
+  </div>
+  <p>The DTO is more work, but it makes the writable surface <em>structural</em> rather than a check somebody has to remember to add.</p>
+
+  <h3>IDOR</h3>
+  <ul>
+    <li><strong>Best:</strong> do not expose direct object references at all — mask the API call so the filename never appears, and authorise every file access.</li>
+    <li><strong>Acceptable:</strong> random, high-entropy object ids — but only as a temporary measure and only alongside rate limits. Randomness without entropy is guessing with extra steps.</li>
+    <li><strong>Always:</strong> an authorisation check before returning the object. The id is not the permission.</li>
+  </ul>
+
+  <h3>Serialization</h3>
+  <p>Every serialization attack is built on a weak serializer, so the primary defence is boring: use a well-tested, popular library with a history of audits, on a popular format (JSON or YAML), not a novel format with no track record. Then handle the data itself:</p>
+  <ul>
+    <li>Data that could later be interpreted as script — or that contains common escape characters — should be sanitised <em>before</em> serialisation, not after.</li>
+    <li>Allowlist input characters and object types where the serializer cannot handle them safely.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CH 34 ================= -->
+<section id="ch34">
+  <h2><span class="num">Chapter 34</span> · Defense Against Client-Side Attacks</h2>
+  <p class="oneliner">Prototype pollution, clickjacking and tabnabbing — three attacks, three near-configuration-level fixes, and one of them is a single HTML attribute.</p>
+
+  <h3>Prototype pollution</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Defence</th><th>How</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Key sanitisation</td><td>Allowlist keys before merging: <code>["street","city","state","firstName","lastName"]</code></td><td>Breaks genuinely dynamic forms; best first-line option where the schema is known</td></tr>
+        <tr><td>Prototype freezing</td><td><code>Object.freeze(obj)</code> — immutable for the life of the tab</td><td>Kills legitimate mutation too; bulk-freezing DOM/JS APIs breaks swathes of functionality. Use sparingly.</td></tr>
+        <tr><td>Null prototypes</td><td><code>Object.create(null)</code> — no chain, nothing to pollute</td><td>Loses inherited helpers; ideal for data bags and dictionaries</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Key validation before any merge</span><span class="tag good">recommended</span></div>
+<pre><code>// submitted by an attacker via the address form
+const obj = { "__proto__": { "role": "admin" } };
+
+const allowedKeys = ["street", "city", "state", "firstName", "lastName"];
+const isKeyValid = function(key) { return allowedKeys.includes(key); };
+
+const updateUserData = function(data) {
+  let isValid = true;
+  for (const [key, value] of Object.entries(data)) {
+    if (!isKeyValid(key)) { isValid = false; }
+  }
+  if (!isValid) {
+    console.error("an invalid key was found!");
+  } else {
+    persistUserData(data);
+  }
+};</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">An object with no prototype chain</span><span class="tag good">recommended</span></div>
+<pre><code>const myObj1 = { username: "testUser1" };  // inherits Object.prototype
+const myObj2 = Object.create(null);        // inherits nothing
+myObj2["username"] = "testUser2";
+Object.getPrototypeOf(myObj2);             // null</code></pre>
+  </div>
+
+  <h3>Clickjacking</h3>
+  <p>Two effective defences; note that <code>X-Frame-Options</code> is described as obsolete by most major browsers.</p>
+  <div class="code">
+    <div class="bar"><span class="title">Frame ancestors — the one-liner that ends most clickjacking</span><span class="tag good">the fix</span></div>
+<pre><code>Content-Security-Policy: frame-ancestors 'none';
+
+/* or, if you must be frameable: */
+Content-Security-Policy: frame-ancestors subdomain.my-website.com;</code></pre>
+  </div>
+  <p>Over 95% of modern browsers support the directive. If you have a rare case that needs to run on an unsupported browser, fall back to a <strong>framebuster</strong>:</p>
+  <div class="code">
+    <div class="bar"><span class="title">Framebuster: hidden until proven top-level</span><span class="tag neutral">legacy fallback</span></div>
+<pre><code>/* in the &lt;head&gt; CSS */
+html { display: none; }
+
+/* in the body, after the CSS */
+if (self === top) {
+  document.documentElement.style.display = 'block';
+}</code></pre>
+  </div>
+  <p>Invisible by default means clicks cannot land on anything; if the page is not framed, it reveals itself. Older framebusters that run <em>after</em> render leave a window for clickjacking and can be delayed or halted by an attacker — which is why the hidden-by-default order matters.</p>
+
+  <h3>Tabnabbing</h3>
+  <ul>
+    <li><strong>COOP:</strong> <code>Cross-Origin-Opener-Policy: same-origin</code> — stops an opened page from holding a reference to the opener at all. First-line solution, except for multi-domain estates where a more relaxed value plus the next item is better.</li>
+    <li><strong>Link attributes:</strong> <code>rel="noopener noreferrer"</code> sets <code>window.opener</code> to null and stops referrer leakage. Essential on any user-generated link.</li>
+    <li><strong>Isolation policies (fetch metadata):</strong> the server reads <code>Sec-Fetch-Site</code>, <code>Sec-Fetch-Mode</code>, <code>Sec-Fetch-Dest</code>, <code>Sec-Fetch-User</code> and refuses requests that do not make sense.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">A link you did not write</span><span class="tag good">recommended</span></div>
+<pre><code>&lt;a href="malicious-website.com" rel="noopener noreferrer"&gt;click me&lt;/a&gt;</code></pre>
+  </div>
+  <div class="code">
+    <div class="bar"><span class="title">Refusing to be framed, using fetch metadata</span><span class="tag good">recommended</span></div>
+<pre><code>app.get('/index.html', function(req, res, next) {
+  const dest = req.headers["Sec-Fetch-Dest"];
+  if (dest === "frame") {
+    return res.sendStatus(400);   // framing attempt blocked
+  } else {
+    return res.sendFile("/index.html");
+  }
+});</code></pre>
+  </div>
+  <div class="callout info">
+    <span class="label">Maturity note the book makes</span>
+    <p>Isolation policies are new and unevenly supported (fine in recent Chrome/Firefox, missing in Safari desktop/iOS and most international browsers). Treat fetch metadata as <strong>defence in depth</strong> — always alongside CSP and <code>rel</code> attributes, never instead of them.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 35 ================= -->
+<section id="ch35">
+  <h2><span class="num">Chapter 35</span> · Securing Third-Party Dependencies</h2>
+  <p class="oneliner">You cannot review what you cannot see. First make the tree visible, then shrink it, then pin it.</p>
+
+  <h3>The tree, not the dependency</h3>
+  <p>Each dependency has dependencies (“fourth-party”), and those have more. Manually reviewing one library is feasible; reviewing its tree is not. That is the point of a dependency tree model.</p>
+  <figure>
+    <img src="@@FIG:hoff_35-1.jpg@@" alt="Terminal output of an npm dependency tree with nested packages and dedupe markers">
+    <figcaption><b>Figure 35-1 — An npm dependency tree.</b> Output of listing a tree in a real project: nested packages, versions, and <code>deduped</code> markers where one copy satisfies several parents. Note how deep it goes — this is what you are trusting.</figcaption>
+  </figure>
+  <p>Why model it: engineering-wise it allows deduplication (JQuery needed by three modules can be included once). Security-wise, it shows you which <em>versions</em> are present.</p>
+  <div class="code">
+    <div class="bar"><span class="title">The same tree, in the real world</span><span class="tag bad">the problem</span></div>
+<pre><code>Primary Application v1.6 → JQuery 3.4.0
+Primary Application v1.6 → SPA Framework v1.3.2 → JQuery v2.2.1
+Primary Application v1.6 → UI Component Library v4.5.0 → JQuery v2.2.1</code></pre>
+  </div>
+  <p>Your app is on 3.4.0, but two dependencies drag in 2.2.1 — a version that may carry critical CVEs. Each unique dependency <em>and every unique version of it</em> must be evaluated. A hundred dependencies can become tens of thousands of tree entries.</p>
+
+  <h3>Automate the comparison</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Turning the tree into a scannable list</span><span class="tag neutral">book code</span></div>
+<pre><code>npm list --depth=[depth]
+
+# then compare against a CVE database — Snyk, or your own script
+# against NVD (government-funded, so likely to persist)</code></pre>
+  </div>
+
+  <h3>Integrate more safely</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Technique</th><th>What it buys</th><th>What it costs</th></tr></thead>
+      <tbody>
+        <tr><td>Separate server / process boundary</td><td>The dependency cannot take over your app’s resources; communicated over HTTP+JSON it behaves like a pure function</td><td>Latency; confidential data sent to it can still be read or modified if it is compromised</td></tr>
+        <tr><td>Version locking (remove npm’s <code>^</code>)</td><td>No silent patch upgrades (<code>1.0.23</code> → <code>1.0.24</code>)</td><td>Does <strong>not</strong> cover subdependencies, and does not stop a maintainer reusing a version number</td></tr>
+        <tr><td>Shrinkwrap</td><td>Locks the <em>entire</em> tree at exact versions — <code>npm-shrinkwrap.json</code></td><td>Still trusts version numbers; must be regenerated deliberately</td></tr>
+        <tr><td>Git SHA references / private mirror</td><td>Removes the “maintainer reuses a version number” risk entirely</td><td>Operational overhead — you now run a registry mirror</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout info">
+    <span class="label">The realistic conclusion</span>
+    <p>Third-party code always carries accepted risk — you trade review time for development time. What you can do is bound it: least privilege and process isolation for risky packages, exact versions and shrinkwrapping for tightly coupled ones, and a CVE scan on every build.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 36 ================= -->
+<section id="ch36">
+  <h2><span class="num">Chapter 36</span> · Mitigating Business Logic Vulnerabilities</h2>
+  <p class="oneliner">Hard to attack, easier to defend — because the defender has the one thing the attacker lacks: the business rules, written down.</p>
+
+  <h3>Worst-case design (a worked argument)</h3>
+  <p>Two algorithms. A1 has a median runtime of 5, but one run in ten takes n² = 25. A2 always takes 6. On medians, A1 wins (5 &lt; 6).</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Runs</th><th>A1 total</th><th>A1 average</th><th>A2 average</th></tr></thead>
+      <tbody>
+        <tr><td>9 × 5 ms + 1 × 25 ms</td><td>70 ms</td><td><strong>7 ms</strong></td><td><strong>6 ms</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Over ten runs A1 averages 7 — about 16% slower than A2, despite the better median. That is <em>best-case design</em>, and the book’s rule is absolute: good security architects never use best-case design.</p>
+  <p>Applied to security: consider the malicious use case for <strong>every</strong> functional component, during architecture. That is where business logic flaws are cheapest to kill — the book’s ratio is “10 hours of fixes in architecture = 100 hours post-launch”.</p>
+
+  <h3>Statistical modelling (finding what review misses)</h3>
+  <p>A hybrid of fuzzing, data science and browser automation. It works in four stages:</p>
+  <ul class="steps">
+    <li><b>Model inputs</b> — rank likely values per field (dropdown frequency, common free-text values, most-selected radio), and deliberately include the rare ones: unusual characters, lengths, scripts. Those edge cases are where logic bugs live. Store the model as JSON/YAML/CSV.</li>
+    <li><b>Model actions</b> — directional page flows plus clicks, links, form AJAX, modals, websocket calls, direct JS calls. Most companies already have this data in analytics.</li>
+    <li><b>Automate the flow</b> in a headless browser against a safe local environment, with mock users in the database.</li>
+    <li><b>Analyse</b> — log every request: payload, response, status. Unexpected errors and faults are your leads; even non-security bugs found this way improve the product.</li>
+  </ul>
+  <div class="code">
+    <div class="bar"><span class="title">Driving the app with Puppeteer from a model file</span><span class="tag neutral">book code</span></div>
+<pre><code>import puppeteer from 'puppeteer';
+import data from 'model';
+import tools from 'tools';
+
+(async () =&gt; {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+
+  await page.goto(data.startURL);
+  await page.setViewport({width: 1080, height: 1024});
+
+  // sign up
+  await page.type('.sign-up-username', data[0].username);
+  await page.type('.sign-up-username', data[0].password);
+  await page.click('.sign-up');
+  await tools.logSignUpStatus();
+
+  // post a comment
+  const commentBox = '.comment-box';
+  await page.waitForSelector(commentBox);
+  await page.type('.comment-box', data[0].messages[0]);
+  await page.click('.submit-comment');
+  await tools.logCommentStatus();
+
+  await browser.close();
+})();</code></pre>
+  </div>
+  <p>Headless Chrome (via Puppeteer) is the modern standard, following Phantom.js and Slimer.js. The specific flows are always application-specific — the pattern is what transfers.</p>
+  <div class="callout warn">
+    <span class="label">Don’t dismiss them as “just bugs”</span>
+    <p>Business logic flaws often look like ordinary programming bugs and get triaged as such. The book’s warning: the business logic in your source code is often your company’s most critical digital asset, and it gets more powerful — and more dangerous — as the app grows.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ================= CH 37 ================= -->
+<section id="ch37">
+  <h2><span class="num">Chapter 37</span> · Part III Summary</h2>
+  <p class="oneliner">The mitigations will date. The philosophies will not.</p>
+  <ul>
+    <li><strong>Every layer adds surface area</strong> — dependencies, caching, distribution. Exploitation gets easier, not harder, as the stack grows.</li>
+    <li><strong>Defence must be comprehensive, meticulous, and regularly revised.</strong> A one-time security push is a snapshot of a moving target.</li>
+    <li><strong>The leverage is in the architecture</strong> — zero trust, framework-level protections, automated discovery, threat modelling. Those reduce the number of decisions humans have to get right.</li>
+    <li><strong>Specific mitigations will change</strong> as attacks shift and browsers ship built-in protections. The design philosophies — worst-case design, least authority, allowlists, verify every privileged action, test for regressions — are career-long.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ================= CHEAT SHEET ================= -->
+<section id="cheatsheet">
+  <h2>Attack → defence, in one table</h2>
+  <p class="mini">Every row from Part II, with the chapter of Part III that answers it. Use this as the index, not as a substitute for the detail above.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Attack (Part II)</th><th>Prevent (Part III)</th><th>Contain / detect</th></tr></thead>
+      <tbody>
+        <tr><td>Stored / reflected XSS (ch. 10)</td><td><code>innerText</code> not <code>innerHTML</code>; sanitise with a maintained library; CSP <code>script-src</code></td><td>CSP nonce/hash + <code>report-uri</code>; Trusted Types; safe sinks audited</td></tr>
+        <tr><td>DOM XSS / mXSS (ch. 10)</td><td>Never pass user data to <code>eval</code>, <code>DOMParser</code>, <code>document.write</code>, Blob, SVG; build nodes explicitly</td><td>Client-side lint rules; CSP (partial only); code review of sinks</td></tr>
+        <tr><td>CSRF (ch. 11)</td><td>No state change on GET; per-session CSRF token in middleware</td><td><code>SameSite=Strict</code>; Origin/Referer checks; <code>Sec-Fetch-*</code></td></tr>
+        <tr><td>XXE (ch. 12)</td><td>Disable DTDs/external entities in every parser</td><td>Prefer JSON; egress filtering; parser config tests</td></tr>
+        <tr><td>SQL injection (ch. 13)</td><td>Prepared statements with bind variables</td><td>DB encoders where parameterising is impossible; least-privilege DB user</td></tr>
+        <tr><td>Code / command injection (ch. 13)</td><td>No user command reaching a CLI; allowlist verbs, order, frequency</td><td>One OS user per module; no shell interpolation; dependency audit</td></tr>
+        <tr><td>ReDoS (ch. 14)</td><td>No user-supplied regex; linter for backtracking patterns</td><td>Request timeouts; input length caps</td></tr>
+        <tr><td>Logical DoS (ch. 14)</td><td>Rank features by resource cost; cap the work a single account can trigger</td><td>Per-request timing logs; quotas; async job monitoring</td></tr>
+        <tr><td>DDoS (ch. 14)</td><td>Nothing prevents it</td><td>Scrubbing service; blackholing; tuned filters after measuring real traffic</td></tr>
+        <tr><td>Mass assignment (ch. 15)</td><td>Field allowlist or DTO</td><td>Diff-audit what the DB layer can write; alert on privilege fields</td></tr>
+        <tr><td>IDOR (ch. 15)</td><td>Masked references + object-level authorisation</td><td>High-entropy ids plus rate limits; access logging</td></tr>
+        <tr><td>Serialization (ch. 15)</td><td>Well-tested serializer, popular format, sanitise before serialising</td><td>Allowlist input types; never <code>eval</code> the output</td></tr>
+        <tr><td>Prototype pollution (ch. 16)</td><td>Key allowlist; <code>Object.create(null)</code></td><td><code>Object.freeze</code> selectively; patched merge libraries</td></tr>
+        <tr><td>Clickjacking (ch. 16)</td><td><code>frame-ancestors 'none'</code></td><td>Framebuster (legacy); <code>Sec-Fetch-Dest</code> checks</td></tr>
+        <tr><td>Tabnabbing (ch. 16)</td><td><code>rel="noopener noreferrer"</code> on user links</td><td>COOP <code>same-origin</code>; fetch metadata isolation policies</td></tr>
+        <tr><td>Dependency attacks (ch. 17)</td><td>Model the tree; lock + shrinkwrap; CVE scan per build</td><td>Isolate risky packages on their own server; Git SHAs or a private mirror</td></tr>
+        <tr><td>Business logic (ch. 18)</td><td>Worst-case design in architecture; threat model per feature</td><td>Statistical modelling with headless browsers; anomaly detection</td></tr>
+        <tr><td>Info disclosure / enumeration (ch. 23)</td><td>Allowlisted generic messages; no sequential ids</td><td>Rate limits sized to legitimate use</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="maturity">
+  <h2>The maturity ladder (author’s synthesis, not the book’s)</h2>
+  <p class="mini">Part III is roughly ordered by maturity. Most teams sit on rung 2 or 3 and believe they are on 5. This framing is my summary of how the chapters build on each other.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Rung</th><th>What it looks like</th><th>What is still missing</th><th>Chapters</th></tr></thead>
+      <tbody>
+        <tr><td>0 · Reactive</td><td>You learn about bugs from customers or Twitter</td><td>Everything</td><td>—</td></tr>
+        <tr><td>1 · Configured</td><td>HTTPS, CSP, cookie flags, security headers, patched dependencies</td><td>No design or review process; still finding bugs late</td><td>22, 30, 33</td></tr>
+        <tr><td>2 · Reviewed</td><td>Architecture review + security code review at merge, with an anti-pattern checklist</td><td>Nothing catches logic flaws; regressions return</td><td>21, 25</td></tr>
+        <tr><td>3 · Modeled</td><td>Threat models with actors, vectors, mitigations and a delta; worst-case design</td><td>Discovery is ad hoc; no scoring, no closed loop</td><td>24, 36</td></tr>
+        <tr><td>4 · Discovered</td><td>Static + dynamic analysis, disclosure programme, bounties, pen tests</td><td>Fixes are ad hoc; no regression tests; no metric</td><td>26</td></tr>
+        <tr><td>5 · Managed</td><td>Reproduce → CVSS → prioritised fix → regression test → trend metrics; owners and deadlines</td><td>Only that it drifts if nobody maintains it</td><td>27, 20</td></tr>
+        <tr><td>6 · Designed-in</td><td>Zero trust, least authority, allowlists, secure-by-default frameworks, per-module isolation</td><td>The next unknown attack</td><td>21, 31, 34, 35</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout good">
+    <span class="label">The cheapest two rungs</span>
+    <p>If you can only do two things this quarter: <strong>enable CSP with <code>frame-ancestors 'none'</code> and hardened cookies</strong> (an afternoon), and <strong>add a security regression test to every closed security bug</strong> (minutes each, compounding forever). Both are in the book, both are cheap, and both survive refactors better than a checklist does.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Notes on <strong>Part III (Defense)</strong> of <em>Web Application Security: Exploitation and Countermeasures</em>, 2nd edition — Andrew Hoffman, O’Reilly 2024. Figures are reproduced from the book for study purposes; captions were written for these notes. Code listings are the book’s examples, reformatted for readability. The “maturity ladder” section is an author addition and is not part of the book.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+}, {passive:true});
+
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>

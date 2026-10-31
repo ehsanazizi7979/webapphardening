@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alice &amp; Bob Learn Secure Coding — Book Summary</title>
+<meta name="description" content="A plain-language walkthrough of every chapter of Alice & Bob Learn Secure Coding by Tanya Janca, with the book's figures and code examples.">
+<style>@@CSS@@</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Book notes · 1 of 2</div>
+    <h1>Alice &amp; Bob Learn Secure Coding</h1>
+    <p class="subtitle">Tanya Janca (“SheHacksPurple”) teaches secure coding by following two developers, Alice and Bob, as they learn to build software that survives contact with real attackers. This page explains every chapter in simple words, with the book’s own figures and short code examples.</p>
+    <div class="meta">
+      <span class="chip">Tanya Janca · Wiley, 2025</span>
+      <span class="chip">15 chapters · 3 parts</span>
+      <span class="chip">Hands-on exercises each chapter</span>
+      <span class="chip">Beginner → advanced</span>
+    </div>
+    <nav class="booknav">
+      <a href="web-application-security.html">→ The other book: Web Application Security (Hoffman)</a>
+      <a href="index.html">All notes</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <h4>Contents</h4>
+  <a href="#tldr">The book in one page</a>
+  <div class="part">Part I — General advice</div>
+  <a href="#ch1">1 · Security fundamentals</a>
+  <a href="#ch2">2 · Beginning</a>
+  <a href="#ch3">3 · Improving</a>
+  <a href="#ch4">4 · Achieving</a>
+  <div class="part">Part II — Specific advice</div>
+  <a href="#ch5">5 · Technology-specific</a>
+  <a href="#ch6">6 · Programming languages</a>
+  <a href="#ch7">7 · Frameworks</a>
+  <a href="#ch8">8 · Vulnerability categories</a>
+  <div class="part">Part III — Secure SDLC</div>
+  <a href="#ch9">9 · Requirements</a>
+  <a href="#ch10">10 · Design</a>
+  <a href="#ch11">11 · Coding</a>
+  <a href="#ch12">12 · Testing</a>
+  <a href="#ch13">13 · Release &amp; deployment</a>
+  <a href="#ch14">14 · Maintenance</a>
+  <a href="#ch15">15 · Conclusion &amp; career</a>
+  <a href="#cheatsheet">Cheat sheet</a>
+</aside>
+
+<main>
+
+<!-- ============ TL;DR ============ -->
+<section id="tldr">
+  <h2>The book in one page</h2>
+  <p class="oneliner">Security is not a feature you add at the end — it is a set of <b>small habits</b> applied at every step: validate input, encode output, give the least privilege, protect secrets, log what happens, and keep everything patched.</p>
+
+  <div class="pillgrid">
+    <div class="pill"><div class="k">Habit 1</div><div class="v"><strong>Never trust data.</strong> Anything from a user, a partner API, or even your own database is input and must be validated.</div></div>
+    <div class="pill"><div class="k">Habit 2</div><div class="v"><strong>Data ≠ code.</strong> Encode output so the browser shows text instead of executing it (stops XSS).</div></div>
+    <div class="pill"><div class="k">Habit 3</div><div class="v"><strong>Least privilege.</strong> Every user, service and process gets only the access it needs — nothing more.</div></div>
+    <div class="pill"><div class="k">Habit 4</div><div class="v"><strong>Allowlists, not blocklists.</strong> Say what is allowed; don’t chase every bad thing that exists.</div></div>
+    <div class="pill"><div class="k">Habit 5</div><div class="v"><strong>Secrets stay secret.</strong> No passwords or keys in code, config files or chat. Use a secret manager.</div></div>
+    <div class="pill"><div class="k">Habit 6</div><div class="v"><strong>Assume breach.</strong> Log, monitor, alert — and have a plan for the day something goes wrong.</div></div>
+    <div class="pill"><div class="k">Habit 7</div><div class="v"><strong>Fail closed.</strong> When in doubt, deny access and break the feature, not the security.</div></div>
+    <div class="pill"><div class="k">Habit 8</div><div class="v"><strong>Keep it simple.</strong> Complexity is the enemy of security: fewer features, fewer dependencies, fewer bugs.</div></div>
+  </div>
+
+  <div class="callout good">
+    <span class="label">The mental model</span>
+    <p>Alice and Bob are ordinary developers, not security experts. The book’s promise: you do not need to be a hacker to write safe code — you need a checklist, good defaults, and the humility to assume you will make mistakes.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============ PART I ============ -->
+<section id="ch1">
+  <h2><span class="num">Chapter 1</span> · Introductory Security Fundamentals</h2>
+  <p class="oneliner">The vocabulary and mindset: what security actually means, which rules always apply, and which laws and standards you may be bound by.</p>
+
+  <div class="card">
+    <h3>Key points, in simple terms</h3>
+    <ul>
+      <li><strong>Assume every other system and all data are insecure.</strong> You cannot control the other side — validate what arrives.</li>
+      <li><strong>CIA triad</strong> — the three things you protect: <em>Confidentiality</em> (only the right people can see it), <em>Integrity</em> (nobody changed it), <em>Availability</em> (it works when needed).</li>
+      <li><strong>Least privilege</strong> — give people, services and code the minimum access needed to do the job, and take it away when it is no longer needed.</li>
+      <li><strong>Secure defaults / paved roads</strong> — make the safe way the easy way. If the secure option is the hard option, developers will avoid it.</li>
+      <li><strong>Assume breach</strong> — design as if an attacker is already inside: segment networks, log everything, and plan for failure instead of being surprised by it.</li>
+      <li><strong>Zero Trust</strong> — “never trust, always verify”; being inside the corporate network is not a permission slip.</li>
+      <li><strong>Defense in depth</strong> — several independent layers (validation, encoding, WAF, least privilege) so one mistake is not fatal.</li>
+      <li><strong>Supply chain security</strong> — you are responsible for every library, container and tool you pull in.</li>
+      <li><strong>Security by obscurity</strong> — hiding things (secret URLs, weird port numbers) is the weakest control; use it only as an extra layer, never alone.</li>
+      <li><strong>Attack surface reduction</strong> — every open port, API, feature and account is somewhere to be attacked. Turn off what you don’t need.</li>
+      <li><strong>Usable security</strong> — if security is annoying, people work around it, and the workaround is usually worse.</li>
+      <li><strong>Fail closed / fail safe</strong> — on error, deny. Then roll back the change that caused the problem.</li>
+      <li><strong>Compliance is a floor, not a ceiling</strong> — the chapter walks through GDPR, PCI DSS, HIPAA, NIST, ISO 27001, DORA, FISMA, CCPA, NY DFS: they tell you what is mandatory, not what is enough.</li>
+      <li><strong>Framework thinking</strong> — OWASP Top 10, OWASP ASVS and SAMM, NIST SSDF and BSIMM give you ready-made checklists.</li>
+      <li><strong>Learn from mistakes and share them</strong> — blameless post-mortems make the whole industry safer.</li>
+      <li><strong>Backward compatibility is risky</strong> — old protocols, old ciphers and old clients keep weak security alive.</li>
+      <li><strong>Threat modeling</strong> — before building, ask “how could this be attacked?” and write down the answer.</li>
+      <li><strong>Patching is hard and fixes create new bugs</strong> — so retest every fix; a fix for one vulnerability often opens another.</li>
+    </ul>
+  </div>
+
+  <h3>The ten rules most of the book keeps coming back to</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Rule</th><th>What it means in practice</th></tr></thead>
+      <tbody>
+        <tr><td>Least privilege</td><td>A reporting job gets a read-only database account, never the admin one.</td></tr>
+        <tr><td>Defense in depth</td><td>Validate on the client, validate again on the server, add a WAF, add rate limits.</td></tr>
+        <tr><td>Fail closed</td><td>If the permission check throws an error, return 403 — not “allow”.</td></tr>
+        <tr><td>Secure defaults</td><td>Private by default, MFA on by default, shortest session lifetime by default.</td></tr>
+        <tr><td>Allowlist over blocklist</td><td>Accept <code>[a-z0-9]</code> instead of trying to strip every dangerous character.</td></tr>
+        <tr><td>Reduce attack surface</td><td>Delete the unused admin API and the debug endpoint before go-live.</td></tr>
+        <tr><td>Usable security</td><td>If users must copy a 64-character key, they will paste it into Slack.</td></tr>
+        <tr><td>Zero trust</td><td>Internal service-to-service calls still authenticate and authorize.</td></tr>
+        <tr><td>Assume breach</td><td>Encrypt data at rest so a stolen disk is not a data breach.</td></tr>
+        <tr><td>Keep it simple (KISS)</td><td>Complexity is where vulnerabilities hide; simple code is auditable code.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="ch2">
+  <h2><span class="num">Chapter 2</span> · Beginning</h2>
+  <p class="oneliner">The starter kit of secure coding: input validation, output encoding, parameterized queries, authentication and authorization, sessions, secrets, HTTPS, security headers and cookies.</p>
+
+  <h3>The core defences</h3>
+  <ul>
+    <li><strong>Follow a secure SDLC</strong> — security activities in every phase (this is Part III of the book, in detail).</li>
+    <li><strong>Use a modern framework and switch on its security features</strong> — they already ship CSRF tokens, output encoding and secure sessions. Don’t rebuild them badly.</li>
+    <li><strong>Input validation</strong> — check type, length, format and range. Prefer allowlists. Validate on the server, always, even when the client already did.</li>
+    <li><strong>Output encoding</strong> — the context decides the encoding: HTML context needs HTML entities, JavaScript context needs JavaScript escaping, and so on. Get it wrong and the browser executes your data as code (XSS).</li>
+    <li><strong>Parameterized queries / ORMs</strong> — never build SQL by gluing strings; let the driver separate the query from the data (stops SQL injection).</li>
+    <li><strong>Authentication (AuthN)</strong> — “who are you?”. Use proven identity systems (OAuth, OIDC, SSO), MFA, strong password hashing, and rate-limited login.</li>
+    <li><strong>Authorization (AuthZ)</strong> — “what may you do?”. Check it on <em>every</em> request, server-side, including object-level checks (can this user touch <em>this</em> record?).</li>
+    <li><strong>Access control models</strong> — MAC (classification labels), DAC (owner decides), RBAC (by role), rule-based (dynamic rules); implemented with ACLs, group policies, and factors like passwords, PINs, tokens and biometrics.</li>
+    <li><strong>Session management</strong> — long random session IDs, rotate the ID at login, time out idle sessions, and destroy the session on logout.</li>
+    <li><strong>Secret management</strong> — API keys, passwords and private keys go in a secret manager or environment variables, never in git, never in the front end.</li>
+    <li><strong>Password management</strong> — hash with bcrypt/scrypt/Argon2 and a salt, check against breached-password lists, allow long passphrases, offer MFA and passkeys.</li>
+    <li><strong>Communication security</strong> — HTTPS/TLS everywhere (HSTS), strong ciphers, no downgrade, and certificate validation turned on.</li>
+    <li><strong>Protect sensitive data</strong> — classify it, encrypt it in transit and at rest, don’t log it, don’t cache it, don’t put it in URLs or hidden fields, and delete it when retention allows.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Input validation &amp; output encoding — the PHP example from the book (Chapter 2)</span><span class="tag neutral">book code</span></div>
+<pre><code>&lt;?php
+// get “name” from the form, then validate it before use
+$name = validate_input($_POST["name"]);
+
+function validate_input($data) {
+  $data = trim($data);             // trim off spaces and tabs
+  $data = stripslashes($data);     // remove backslashes
+  $data = htmlspecialchars($data); // convert special characters (output encoding)
+  return $data;                    // return safe-to-use data
+}
+?&gt;</code></pre>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Why both?</span>
+    <p>Validation protects <em>you</em> (the app) from bad data. Encoding protects the <em>browser</em> from data that pretends to be code. The book is explicit: you need both, and the browser context (HTML, attribute, JavaScript, CSS, URL) decides which encoding is correct.</p>
+  </div>
+
+  <h3>Security headers — the browser-side safety net</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Header</th><th>Plain-language job</th></tr></thead>
+      <tbody>
+        <tr><td><code>Content-Security-Policy</code></td><td>Tells the browser which sources of script/style/image are allowed — the strongest defence against XSS.</td></tr>
+        <tr><td><code>Strict-Transport-Security</code></td><td>“Only ever talk to me over HTTPS.”</td></tr>
+        <tr><td><code>X-Frame-Options</code> / <code>frame-ancestors</code></td><td>Stops other sites framing yours (clickjacking).</td></tr>
+        <tr><td><code>X-Content-Type-Options</code></td><td>Stops the browser sniffing a file into something executable.</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td>Limits how much URL information leaks to other sites.</td></tr>
+        <tr><td><code>Permissions-Policy</code></td><td>Switches off browser features you don’t use (camera, microphone, geolocation).</td></tr>
+        <tr><td><code>Sec-Fetch-*</code> (Fetch Metadata)</td><td>Tells the server where a request came from — a cheap CSRF defence.</td></tr>
+        <tr><td><code>COOP</code> / <code>COEP</code> / <code>CORP</code> / <code>CORS</code> / <code>CORB</code></td><td>The cross-origin family: who may open, embed, read or share your resources.</td></tr>
+        <tr><td><code>Expect-CT</code>, HPKP, <code>X-XSS-Protection</code></td><td>Legacy headers — mostly deprecated; know them, but rely on CSP and HSTS.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="code">
+    <div class="bar"><span class="title">A starting set of headers + a CSP without inline script</span><span class="tag good">safe</span></div>
+<pre><code>Content-Security-Policy: default-src 'self';
+                         script-src 'self' 'nonce-r4nd0m';
+                         object-src 'none'; base-uri 'none';
+                         frame-ancestors 'none'
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()</code></pre>
+  </div>
+
+  <h3>Secure cookies and error handling</h3>
+  <ul>
+    <li><strong>Cookie flags:</strong> <code>Secure</code> (HTTPS only), <code>HttpOnly</code> (JavaScript cannot read it), <code>SameSite=Lax/Strict</code> (blocks cross-site sending), a tight <code>Path</code> and a short expiry.</li>
+    <li><strong>Error handling:</strong> show users a generic message, log the details internally, never leak stack traces, SQL, file paths or version numbers. And when an error happens in a security check — deny.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">A session cookie that is hard to steal</span><span class="tag good">safe</span></div>
+<pre><code>Set-Cookie: sid=8f2c…long-random…; HttpOnly; Secure; SameSite=Lax;
+            Path=/; Max-Age=1800</code></pre>
+  </div>
+
+  <h3>Parameters vs string-building (the injection fix)</h3>
+  <div class="figrow">
+    <div class="code">
+      <div class="bar"><span class="title">Don’t build queries by concatenation</span><span class="tag bad">vulnerable</span></div>
+<pre><code>const sql =
+  "SELECT * FROM users WHERE email = '"
+  + req.body.email + "'";
+db.query(sql);   // input becomes code</code></pre>
+    </div>
+    <div class="code">
+      <div class="bar"><span class="title">Let the driver keep data as data</span><span class="tag good">safe</span></div>
+<pre><code>db.query(
+  "SELECT * FROM users WHERE email = ?",
+  [req.body.email]
+);   // parameterized</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="ch3">
+  <h2><span class="num">Chapter 3</span> · Improving</h2>
+  <p class="oneliner">Level two: databases, files, memory, privacy, logging, cryptography and type systems — the places where “it works” is not the same as “it is safe”.</p>
+
+  <ul>
+    <li><strong>Database security</strong> — least-privilege roles (read-only where possible), long unique service-account passwords, encryption in transit and at rest, MFA for DB users, no production data in test environments, no copying data out of the database, monitoring and backups.</li>
+    <li><strong>File management &amp; uploads</strong> — restrict file types, verify the real type from the file header (not the extension), scan for malware, rename the file, never let the user choose the path, store files outside the web root, and make sure the storage server cannot execute them.</li>
+    <li><strong>Your source code</strong> — it is a valuable asset. Keep it in access-controlled repos with reviews and signed commits.</li>
+    <li><strong>Memory management</strong> — buffer, stack, string and integer overflows; over-reads; use-after-free; uninitialised variables; memory leaks. Prefer memory-safe languages, bounds checks, safer string functions, DEP/ASLR/stack canaries, and fuzzing.</li>
+    <li><strong>(De)serialization</strong> — never deserialize objects from an untrusted source; that is how you get remote code execution instead of “data”.</li>
+    <li><strong>Privacy</strong> — know what counts as PII/sensitive data, collect only what you need, get consent, honour retention and deletion, and log access to sensitive records.</li>
+    <li><strong>Errors</strong> — fail closed, use a global error handler, never echo internals to the user.</li>
+    <li><strong>Logging, monitoring, alerting</strong> — log every security-relevant event (logins, failures, permission denials, admin actions) with UTC timestamp, user, source IP and action; never log secrets or PII; alert on anomalies.</li>
+    <li><strong>Locking resources</strong> — stop two requests from corrupting the same record at the same time (race conditions).</li>
+    <li><strong>Cryptographic practices</strong> — use the vetted libraries and FIPS/NIST guidance, never invent your own crypto, never reuse an IV/nonce, and don’t store the key next to the data.</li>
+    <li><strong>Strongly typed vs weakly typed languages</strong> — strong, static typing catches whole classes of bugs at compile time (type confusion, accidental comparisons, implicit conversions).</li>
+    <li><strong>Domain-driven development &amp; memory-safe languages</strong> — model the business rules explicitly so logic errors are visible, and choose languages where the compiler/runtime handles memory for you.</li>
+  </ul>
+
+  <h3>What a logged security event should contain</h3>
+  <div class="code">
+    <div class="bar"><span class="title">Log the event, not the secret</span><span class="tag good">safe</span></div>
+<pre><code>{
+  "ts": "2025-03-02T09:14:07Z",     // always UTC
+  "event": "login_failed",
+  "user": "alice@example.com",
+  "source_ip": "203.0.113.42",
+  "request_id": "req_8f2c",
+  "outcome": "denied",
+  "reason": "bad_password"
+}
+// never log: passwords, tokens, full card numbers, whole request bodies</code></pre>
+  </div>
+
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:ab_3.1.jpg@@" alt="Diagram of a variable stored correctly in its allotted memory">
+      <figcaption><b>Figure 3.1 — a variable stored properly.</b> “TANYA” fits exactly inside the five characters that were allocated for it. Nothing spills over.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:ab_3.2.jpg@@" alt="Diagram of a buffer overflow where attacker shell code overwrites memory">
+      <figcaption><b>Figure 3.2 — the same variable, overflowed.</b> Extra input runs past the allotted memory and lands where the program keeps its return address and stack pointer, so the attacker’s shell code can be executed.</figcaption>
+    </figure>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Takeaway from the overflow figures</span>
+    <p>An overflow is not “a long string”. It is <em>your data overwriting your program’s instructions</em>. That is why the book recommends bounds checks, safer string functions, non-executable stacks (DEP), ASLR, and memory-safe languages first.</p>
+  </div>
+</section>
+
+<section id="ch4">
+  <h2><span class="num">Chapter 4</span> · Achieving</h2>
+  <p class="oneliner">How design decisions — dependencies, defaults, allowlists, configurations, code signing, privilege handling — decide most of your security before a single bug is written.</p>
+
+  <ul>
+    <li><strong>Secure design, and “how much is enough?”</strong> — weigh the risk: how sensitive is the data, who are your adversaries (script kiddies or nation-states), what does regulation require, what can the team realistically sustain?</li>
+    <li><strong>Dependency &amp; supply chain</strong> — know every component, check for known CVEs, use trusted registries, pin and lock versions, monitor continuously, and remember the chain includes your IDE, repo, CI/CD, package mirrors and third-party APIs.</li>
+    <li><strong>Secure defaults for users</strong> — MFA offered (and mandatory for important systems), breach-password checks, backup codes, “last login” and “logged-in devices” views, account-recovery that can’t be abused.</li>
+    <li><strong>Secure defaults for developers</strong> — secret-management policy, cloud security posture checks, SAST when code is committed, one-page how-tos, self-service, IDE plugins, automated checks, a unified stack and real training.</li>
+    <li><strong>Readable and auditable code</strong> — naming conventions, security-relevant comments, simple logic, peer review, licensing compliance, refactoring, diagrams, and paying down technical debt.</li>
+    <li><strong>Important functions belong on trusted systems</strong> — price calculation, privilege checks, signing and logging should never happen on the client or on an untrusted device.</li>
+    <li><strong>Allowlists beat blocklists</strong> — blocklists are endless and trivially bypassed; an allowlist of what is valid is short and testable (e.g. names need letters, spaces, apostrophes, hyphens — not <code>&lt;</code> or <code>&gt;</code>).</li>
+    <li><strong>Secure configurations</strong> — change default accounts and passwords, disable unused services and HTTP verbs, turn off directory listing and verbose errors, and keep production and development configurations separate.</li>
+    <li><strong>Hostname validation</strong> — when you call out to a host, verify the certificate matches the hostname you intended (prevents redirection and man-in-the-middle).</li>
+    <li><strong>Reusable code</strong> — build shared, reviewed, versioned, well-governed libraries so the safe way is the default for everyone.</li>
+    <li><strong>Safe system calls</strong> — avoid passing user input to a shell; use argument lists, not command strings.</li>
+    <li><strong>Comments and documentation</strong> — explain <em>why</em> a security control exists, keep docs short and current, and include diagrams.</li>
+    <li><strong>Verification of user consent</strong> — collect data only for stated purposes, record consent, and re-ask when the purpose changes (including using data to train AI).</li>
+    <li><strong>Integrity checks, code signing, immutable builds</strong> — sign releases, verify checksums, and make build artifacts immutable so nobody can swap them.</li>
+    <li><strong>Avoiding brute force</strong> — rate limits, account lockouts with care, CAPTCHAs, exponential backoff, and monitoring for credential stuffing.</li>
+    <li><strong>Security controls come in three flavours</strong> — physical (locks, doors), technical (software enforcement) and administrative (policies, procedures, training).</li>
+    <li><strong>Handling elevated privileges</strong> — use just-in-time admin access, separate admin accounts, approval trails, and log everything an admin does.</li>
+    <li><strong>Security maintenance &amp; technical debt</strong> — patch, scan, review, and budget time to fix the “we’ll do it later” list, because attackers read your backlog too.</li>
+  </ul>
+
+  <div class="code">
+    <div class="bar"><span class="title">Safe system calls — no shell, no surprises</span><span class="tag good">safe</span></div>
+<pre><code># avoid: user input inside a shell string
+os.system("ping -c 1 " + host)          # host = "8.8.8.8; rm -rf /"
+
+# prefer: argument list, shell disabled, input validated first
+subprocess.run(["ping", "-c", "1", host], shell=False, check=True)</code></pre>
+  </div>
+
+  <figure>
+    <img src="@@FIG:ab_14.1.jpg@@" alt="Layered architecture diagram: internet, WAF/CDN/RASP, front end, API gateway, API and serverless, ORM and input validation, database">
+    <figcaption><b>Figure 14.1 — layers of protective abstraction.</b> The internet enters through a WAF/CDN/RASP, then the front end, an API gateway, the API or serverless functions, and finally validation/ORM before the database. Each layer is a chance to catch what the previous one missed — defense in depth drawn as architecture.</figcaption>
+  </figure>
+</section>
+
+<hr>
+
+<!-- ============ PART II ============ -->
+<section id="ch5">
+  <h2><span class="num">Chapter 5</span> · Technology-Specific Secure Coding</h2>
+  <p class="oneliner">The same principles, re-tuned for APIs, mobile apps, WebSockets, serverless and IoT — because each platform has its own favourite way to bite you.</p>
+
+  <h3>APIs</h3>
+  <ul>
+    <li>Threat model first; put every API behind a gateway; add authorization <em>beyond</em> authentication (per endpoint, per object, per function).</li>
+    <li>Use proven auth (OAuth 2 / JWT done correctly), and never roll your own token format.</li>
+    <li>Rate-limit and quota everything: requests per client, payload size, records per page, file descriptors, connections.</li>
+    <li>Validate and strongly type parameters, encrypt requests <em>and</em> responses, avoid verbose errors, decommission old API versions properly, and block unused HTTP verbs.</li>
+    <li>Separate API keys per app, rotate them, and protect against SSRF (server-side request forgery) by allowlisting outbound destinations.</li>
+  </ul>
+
+  <h3>Mobile apps</h3>
+  <ul>
+    <li>Assume the app will be decompiled: no secrets, no logic you rely on, no keys inside the binary.</li>
+    <li>Store as little as possible on the device; never keep the encryption key beside the encrypted data; auto-delete local data.</li>
+    <li>Long-lived mobile sessions need remote wipe, remote logout, automatic timeout, tokens instead of device identifiers.</li>
+    <li>Ask only for the permissions you truly need, disable autocomplete/copy-paste for sensitive fields, and protect backups, screenshots and cached images.</li>
+  </ul>
+
+  <h3>WebSockets</h3>
+  <ul>
+    <li>Use <code>wss://</code>, validate the <code>Origin</code> of the handshake, re-check authentication during the session, rate-limit messages and cap payload size.</li>
+    <li>Don’t tunnel arbitrary traffic through the socket, and don’t trust a connection just because it stayed open.</li>
+  </ul>
+
+  <h3>Serverless</h3>
+  <ul>
+    <li>Each function gets its own minimal permissions; one function should do one thing.</li>
+    <li>Put it behind a gateway, validate inputs per function, set timeouts and memory limits, and watch for event-injection and denial-of-wallet costs.</li>
+  </ul>
+
+  <h3>IoT</h3>
+  <ul>
+    <li>Physical security matters; segment the network; ship a firmware-update plan before you ship the device.</li>
+    <li>No default passwords, unique credentials per device, protect the mobile app that controls it, and monitor devices like any other asset.</li>
+  </ul>
+</section>
+
+<section id="ch6">
+  <h2><span class="num">Chapter 6</span> · Popular Programming Languages</h2>
+  <p class="oneliner">Language-specific foot-guns: the functions that execute strings, the defaults that leak, and the idioms that are safe.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Language</th><th>What to remember</th></tr></thead>
+      <tbody>
+        <tr><td><strong>JavaScript</strong></td><td>No <code>eval()</code>, no <code>innerHTML</code>/<code>outerHTML</code>, no <code>document.write()</code>; use <code>textContent</code>, <code>createElement</code>, <code>appendChild</code>, <code>encodeURIComponent</code>. Avoid inline scripts, use CSP + nonces, sanitize with DOMPurify, watch prototype pollution.</td></tr>
+        <tr><td><strong>HTML / CSS / HTML5</strong></td><td>Encode everything rendered; don’t accept user CSS; don’t use hidden fields for secrets; careful with <code>postMessage</code> (state the origin and validate it); use the <code>sandbox</code> attribute for untrusted content.</td></tr>
+        <tr><td><strong>Python</strong></td><td>Python 3 only, virtualenv + pip freeze, absolute imports, <code>subprocess</code> without <code>shell=True</code>, <code>yaml.safe_load()</code> not <code>yaml.load()</code>, secrets in env/secret store, no <code>pickle</code> on untrusted data.</td></tr>
+        <tr><td><strong>SQL</strong></td><td>Parameterized queries or stored procedures, an ORM on top, least-privilege accounts, encryption, MFA for DB users, backups, monitoring, and never <code>EXECUTE</code> user strings.</td></tr>
+        <tr><td><strong>Node.js</strong></td><td>Never run as root, <code>npm ci</code> with a lockfile, <code>--ignore-scripts</code>, audit dependencies, don’t block the event loop, bound inputs on expensive operations.</td></tr>
+        <tr><td><strong>Java</strong></td><td>Avoid Java serialization on untrusted data, use allowlists for deserialization, keep the JDK patched, prefer prepared statements, and be careful with reflection.</td></tr>
+        <tr><td><strong>TypeScript</strong></td><td>Types are compile-time only — validate at runtime too; don’t use <code>any</code> to silence the compiler; enable <code>strict</code>.</td></tr>
+        <tr><td><strong>C#</strong></td><td>Use built-in identity, anti-forgery tokens, <code>RandomNumberGenerator</code>, safe serializers, model-binding allowlists, and role checks via <code>User.Identity</code>.</td></tr>
+        <tr><td><strong>PHP</strong></td><td><code>htmlspecialchars()</code> on output, prepared statements (PDO/mysqli), no <code>eval</code>/<code>system</code>/<code>exec</code> with user input, disable dangerous settings, keep the version current.</td></tr>
+        <tr><td><strong>C / C++</strong></td><td>You are the memory manager: bounds checks, safer string functions, no uninitialised pointers, free memory correctly, sanitizers and fuzzing in CI.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="figrow">
+    <div class="code">
+      <div class="bar"><span class="title">JavaScript: text, not markup</span><span class="tag good">safe</span></div>
+<pre><code>// XSS waiting to happen
+el.innerHTML = userComment;
+
+// treat the comment as text
+el.textContent = userComment;
+
+// or build nodes explicitly
+const p = document.createElement("p");
+p.textContent = userComment;
+el.appendChild(p);</code></pre>
+    </div>
+    <div class="code">
+      <div class="bar"><span class="title">Python: the three usual suspects</span><span class="tag good">safe</span></div>
+<pre><code># YAML: safe loader
+data = yaml.safe_load(untrusted)
+
+# subprocess: no shell
+subprocess.run(["ls", "-l", path], shell=False)
+
+# secrets: from the environment, never in code
+api_key = os.environ["API_KEY"]</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="ch7">
+  <h2><span class="num">Chapter 7</span> · Popular Frameworks</h2>
+  <p class="oneliner">Frameworks already contain the security features — the job is to switch them on, keep them updated, and not undo them.</p>
+
+  <ul>
+    <li><strong>Express</strong> — helmet for headers, rate limiting, body-size limits, no <code>eval</code>, validate with a schema library, handle errors centrally, don’t leak stack traces.</li>
+    <li><strong>React</strong> — JSX escapes by default; <code>dangerouslySetInnerHTML</code> is named that way for a reason; never build <code>javascript:</code> URLs from user input; sanitize with DOMPurify when you must render HTML.</li>
+    <li><strong>Angular</strong> — the built-in sanitizer plus DOMSanitizer; avoid <code>bypassSecurityTrust*</code> unless the value is genuinely trusted; use the HTTP client’s XSRF support.</li>
+    <li><strong>jQuery</strong> — legacy risk: <code>.html()</code>, <code>.append()</code> with strings and old plugins are XSS vectors; prefer <code>.text()</code> and keep the library patched.</li>
+    <li><strong>Vue.js</strong> — <code>{{ }}</code> escapes automatically, never use <code>v-html</code> with untrusted data, sanitize URLs, don’t render <code>&lt;script&gt;</code>, and use <code>v-if</code> over <code>v-show</code> for sensitive content.</li>
+    <li><strong>.NET (Core)</strong> — built-in identity, anti-forgery tokens, data protection API, role-based checks, security headers helper, model-binding allowlists.</li>
+    <li><strong>Ruby on Rails</strong> — strong parameters, CSRF tokens by default, <code>html_escape</code>/<code>sanitize</code>, avoid <code>html_safe</code>, use ActiveRecord, Brakeman for static analysis, <code>system</code> with argument arrays, secure session store.</li>
+    <li><strong>Spring / Spring Boot</strong> — Spring Security for authN/authZ, CSRF protection and headers on by default, <code>PasswordEncoder</code> for hashing, JDBC/JPA for queries, method-level <code>@PreAuthorize</code>.</li>
+    <li><strong>Flask</strong> — Jinja2 autoescapes, Flask-WTF CSRF protection, Flask-Login/Flask-Security for sessions, parameterized queries, <code>flask.escape</code>, Flask-SSLify for HTTPS.</li>
+  </ul>
+
+  <div class="callout good">
+    <span class="label">The pattern across all frameworks</span>
+    <p>Every framework gives you (1) automatic output escaping, (2) CSRF protection, (3) a password hasher, (4) session handling, (5) security headers. Your job is to not <em>bypass</em> them — the dangerous functions are the ones with names like <code>raw</code>, <code>safe</code>, <code>html</code>, <code>bypass</code>, <code>dangerously</code>, <code>eval</code>.</p>
+  </div>
+</section>
+
+<section id="ch8">
+  <h2><span class="num">Chapter 8</span> · Vulnerability Categories</h2>
+  <p class="oneliner">A catalogue of the ways software breaks, each explained the same way: what it is, how it happens, the risk, and the prevention.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Category</th><th>In plain words</th><th>First defence</th></tr></thead>
+      <tbody>
+        <tr><td>Design / logic flaws</td><td>The code does what it was told, but the rule itself is wrong (e.g. “apply the discount twice”).</td><td>Threat modeling, business-rule review, tests for abuse cases</td></tr>
+        <tr><td>Code bugs / implementation errors</td><td>Typos, wrong conditions, missing checks.</td><td>Code review, tests, static analysis, types</td></tr>
+        <tr><td>Overflows &amp; memory issues</td><td>Data written past the memory it was given; use-after-free; leaks.</td><td>Memory-safe languages, bounds checks, ASLR/DEP, fuzzing</td></tr>
+        <tr><td>Injection (interpreter/compiler)</td><td>Input is treated as SQL, shell, LDAP, template or code.</td><td>Parameterization, argument lists, allowlists</td></tr>
+        <tr><td>Input issues</td><td>Missing or wrong validation: type, length, range, encoding.</td><td>Server-side allowlist validation</td></tr>
+        <tr><td>Authentication / identity issues</td><td>Weak passwords, broken reset flows, missing MFA, session fixation.</td><td>Proven identity provider, MFA, strong hashing</td></tr>
+        <tr><td>Authorization / access issues</td><td>Missing checks, or checking the wrong thing (IDOR).</td><td>Server-side checks on every request and every object</td></tr>
+        <tr><td>Configuration / implementation issues</td><td>Defaults left on, debug mode in production, over-permissive CORS.</td><td>Hardening baselines, IaC scanning</td></tr>
+        <tr><td>Fraudulent transactions</td><td>Abusing the checkout: negative quantities, currency confusion, replaying a payment.</td><td>Server-side pricing, idempotency, fraud monitoring</td></tr>
+        <tr><td>Replay attacks</td><td>Capturing a valid request and sending it again later.</td><td>Nonces, timestamps, short-lived tokens</td></tr>
+        <tr><td>Crossing trust boundaries</td><td>Data moving between zones with different trust levels without re-checking.</td><td>Re-validate and re-authenticate at each boundary</td></tr>
+        <tr><td>File handling issues</td><td>Path traversal, uploaded executables, unsafe temp files.</td><td>Allowlisted types, generated names, storage outside web root</td></tr>
+        <tr><td>Object handling / deserialization</td><td>Turning bytes into live objects lets an attacker choose the class.</td><td>Never deserialize untrusted input; allowlists; signing</td></tr>
+        <tr><td>Secrets management</td><td>Keys and passwords in code, logs, URLs or the client.</td><td>Secret manager, rotation, scanning</td></tr>
+        <tr><td>Race conditions / timing</td><td>Two things happen at once and the check is bypassed; or timing leaks a secret.</td><td>Locks, transactions, constant-time comparisons</td></tr>
+        <tr><td>Resource issues</td><td>Unbounded memory, CPU or connections — a denial of service.</td><td>Limits, quotas, timeouts</td></tr>
+        <tr><td>Falling into an unknown state</td><td>The program ends up in a state nobody designed, and then guesses.</td><td>Explicit state machines, fail closed</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The two access-control figures: what authorization really means</h3>
+  <div class="figrow">
+    <figure>
+      <img src="@@FIG:ab_2.1.jpg@@" alt="Alice is connected to the User role which can reach the files in her folder; the Admin role reaches everyone's folders">
+      <figcaption><b>Figure 2.1 — access control for Alice.</b> Alice is assigned the <em>User</em> role, and that role is allowed to reach the files in her own folder. She has no arrow to “everyone’s folders”.</figcaption>
+    </figure>
+    <figure>
+      <img src="@@FIG:ab_2.2.jpg@@" alt="Tanya has only the Reader role, which can read the document; Editor and Owner paths are crossed out">
+      <figcaption><b>Figure 2.2 — access control for Tanya.</b> Tanya holds only the <em>Reader</em> role. The Editor and Owner routes to “can edit the doc” and “can give access to the doc” are crossed out, even though those roles exist in the system.</figcaption>
+    </figure>
+  </div>
+  <div class="callout">
+    <span class="label">Read the figures this way</span>
+    <p>Authorization is not “does the role exist?” but “is <em>this</em> user, through <em>this</em> role, allowed to perform <em>this</em> action on <em>this</em> object, right now?”. Every missing arrow in these diagrams is an access check your code must actually implement — and every X is a test case.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============ PART III ============ -->
+<section id="ch9">
+  <h2><span class="num">Chapter 9</span> · Requirements</h2>
+  <p class="oneliner">Security starts in the kick-off meeting: put it in the requirements and in the schedule, or it will not exist.</p>
+  <ul>
+    <li>Invite a security representative to the project kick-off and record which security activities the project will do.</li>
+    <li>Write <strong>security requirements</strong> next to functional ones (“all traffic over TLS 1.2+”, “MFA for admin accounts”, “audit log retained 1 year”).</li>
+    <li>Estimate and schedule the security work: threat modeling, code review, scanning, pen test, remediation time.</li>
+    <li>Agree the compliance obligations up front (privacy, retention, data residency).</li>
+  </ul>
+</section>
+
+<section id="ch10">
+  <h2><span class="num">Chapter 10</span> · Design</h2>
+  <p class="oneliner">Threat modeling is structured evil brainstorming — and it is cheapest to do with a whiteboard, not a production incident.</p>
+  <ul>
+    <li><strong>Threat model</strong> the architecture: what are we building, what can go wrong, what are we going to do about it, did we do a good job?</li>
+    <li>Draw the architecture, follow the <strong>data flows</strong> (where does sensitive data enter, get stored, get displayed, leave?), and mark the trust boundaries.</li>
+    <li>Apply secure design patterns and concepts (least privilege, separation of duties, fail-safe defaults, economy of mechanism).</li>
+    <li>Write <strong>security user stories</strong> — “As a security-savvy user I want my data protected from XSS so that…” — so security has acceptance criteria.</li>
+    <li>Document the mitigations you agreed, assign owners, set deadlines, and re-run the threat model when the design changes.</li>
+  </ul>
+</section>
+
+<section id="ch11">
+  <h2><span class="num">Chapter 11</span> · Coding</h2>
+  <p class="oneliner">The daily work: trained people, reviewed code, and automated guardrails that catch the boring mistakes.</p>
+  <ul>
+    <li><strong>Training</strong> — for the organization (a programme, not a one-off video) and for individuals (this book, OWASP, hands-on labs).</li>
+    <li><strong>Code review</strong> — a second pair of eyes, with a security checklist, focused on new and changed code.</li>
+    <li><strong>Static analysis (SAST)</strong> — 1st-generation (pattern matching) and 2nd-generation (data-flow/semantic) tools; both have a place, both need triage.</li>
+    <li><strong>Secure guardrails</strong> — pre-commit hooks, CI checks, IDE plugins with red squiggly lines, and templates that start secure.</li>
+    <li><strong>Software composition analysis (SCA)</strong> — know your dependencies and their vulnerabilities; decide deliberately whether to update, patch or replace.</li>
+    <li><strong>Secret scanning</strong> — catch keys before (or right after) they reach the repo, then rotate them.</li>
+    <li><strong>Dynamic testing (DAST)</strong> — scan the running application, not just the source.</li>
+  </ul>
+</section>
+
+<section id="ch12">
+  <h2><span class="num">Chapter 12</span> · Testing</h2>
+  <p class="oneliner">Testing is where you find out that the design was optimistic. Mix automated breadth with human depth, and act on the results.</p>
+  <ul>
+    <li><strong>Coverage and depth</strong> — decided by risk: sensitive, internet-facing, money-handling code gets the deepest testing.</li>
+    <li><strong>Infrastructure scanning</strong> — hosts, containers, cloud configuration; test in environments that mirror production, but never with production data.</li>
+    <li><strong>Manual testing / pen testing</strong> — humans find business-logic and chained bugs that scanners cannot.</li>
+    <li><strong>Automated testing</strong> — SAST, DAST, IAST, SCA and secret scanning wired into CI.</li>
+    <li><strong>Fuzzing</strong> — throw malformed and random input at every input to find crashes and overflows.</li>
+    <li><strong>IAST</strong> — instruments the running app for high-signal, low-false-positive results (expensive, mostly used by mature/bank-grade programmes).</li>
+    <li><strong>Bug bounty programmes</strong> — powerful but conditional: you need a fast triage process, a budget, and no “we’ll fix it next year” list.</li>
+    <li><strong>Test results must be actionable</strong> — put findings where developers already work (ticket tracker / CI), with reproduction steps, severity and a fix suggestion. Never hide or falsely close findings.</li>
+  </ul>
+</section>
+
+<section id="ch13">
+  <h2><span class="num">Chapter 13</span> · Release &amp; Deployment</h2>
+  <p class="oneliner">The release pipeline is the last gate: sign what you ship, verify what you deploy, and keep humans in the loop.</p>
+  <ul>
+    <li>Digitally sign releases and packages; verify checksums and provenance.</li>
+    <li>Pull dependencies only from trusted repositories, and run SCA on every build.</li>
+    <li>Protect the pipeline: reviews for configuration changes, MFA for CI/CD users, more than one person required to publish, and strictly limited access to build tooling.</li>
+    <li>Store secrets in the CI/CD secret store — never in build logs or environment files committed to the repo.</li>
+    <li>Deploy immutable, reproducible artifacts, and keep an auditable record of what went out and when.</li>
+  </ul>
+</section>
+
+<section id="ch14">
+  <h2><span class="num">Chapter 14</span> · Maintenance</h2>
+  <p class="oneliner">Most of a system’s life happens after launch — that is where patching, monitoring and legacy systems decide whether you stay safe.</p>
+  <ul>
+    <li><strong>Patch and update</strong> continuously — dependencies, frameworks, runtimes, OS, containers.</li>
+    <li><strong>Observability</strong> — logs, metrics and traces, so you can see attacks and outages before customers report them.</li>
+    <li><strong>WAFs and virtual patching</strong> — a compensating control at the edge while the real fix is written (it buys time, not safety).</li>
+    <li><strong>CDNs</strong> — absorb load and DDoS traffic, and serve cached content closer to users.</li>
+    <li><strong>RASP / runtime protection</strong> — watch behaviour inside the app and block what looks wrong.</li>
+    <li><strong>Legacy systems</strong> — inventory them, isolate them, and plan their retirement; unreachable, unpatched boxes are the classic way in.</li>
+    <li><strong>Incident response</strong> — have a plan, follow “need to know”, tell the security team early, don’t play the hero, and log everything you do during the incident.</li>
+    <li><strong>Decommissioning</strong> — delete data, keys, accounts and DNS records properly when a system retires.</li>
+  </ul>
+
+  <div class="callout warn">
+    <span class="label">The maintenance trap</span>
+    <p>Software that nobody touches is not “stable” — it is frozen at the security level of its release date. Unused code, forgotten admin panels and abandoned dependencies are where breaches live (the book calls unused code significantly more likely to be insecure).</p>
+  </div>
+</section>
+
+<section id="ch15">
+  <h2><span class="num">Chapter 15</span> · Conclusion &amp; Career</h2>
+  <p class="oneliner">Personal security habits, using AI responsibly, and growing a career in security without burning out.</p>
+  <ul>
+    <li><strong>Protect yourself:</strong> MFA everywhere, a password manager, passphrases, no password reuse, HaveIBeenPwned alerts, passkeys where offered.</li>
+    <li><strong>You are a target</strong> because you are a superuser — be suspicious of “too good to be true”, verify requests for credentials, and ask the security team when unsure.</li>
+    <li><strong>Use AI carefully:</strong> review generated code, never give an AI agency over your systems, never paste secrets or private data into it, and check licences and correctness.</li>
+    <li><strong>Use AI as a helper:</strong> threat models, documentation, finding vulnerabilities, suggesting fixes, adding comments — all fine, with human review.</li>
+    <li><strong>Grow deliberately:</strong> mentors, communities (OWASP, Let’s Talk Software Security), free training, newsletters, and a small number of realistic goals.</li>
+    <li><strong>Appendices</strong> — a curated resource list and answer keys for the chapter exercises, so the book can be used as a course.</li>
+  </ul>
+</section>
+
+<section id="cheatsheet">
+  <h2>One-page cheat sheet</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Situation</th><th>Do this</th></tr></thead>
+      <tbody>
+        <tr><td>Accepting user input</td><td>Validate server-side with an allowlist: type, length, format, range.</td></tr>
+        <tr><td>Showing data on a page</td><td>Encode for the exact context (HTML, attribute, JS, CSS, URL) with the framework’s encoder.</td></tr>
+        <tr><td>Talking to a database</td><td>Parameterized queries / ORM / stored procedures + least-privilege account.</td></tr>
+        <tr><td>Handling passwords</td><td>bcrypt/scrypt/Argon2 + salt, breached-password check, MFA, rate limiting.</td></tr>
+        <tr><td>Storing keys</td><td>Secret manager or environment variables; rotate; scan the repo for leaks.</td></tr>
+        <tr><td>Uploading files</td><td>Allowlist types, check headers, rename, store outside the web root, scan for malware.</td></tr>
+        <tr><td>Calling a shell</td><td>Argument arrays, <code>shell=False</code>, validated input, least privilege.</td></tr>
+        <tr><td>Rendering HTML from users</td><td>Don’t; if you must, sanitize (DOMPurify / Bleach) and enforce CSP with nonces.</td></tr>
+        <tr><td>Something fails</td><td>Fail closed, generic error to the user, details to the log.</td></tr>
+        <tr><td>Adding a dependency</td><td>Trusted source, pinned version, CVE check, monitored forever.</td></tr>
+        <tr><td>Shipping</td><td>Signed, immutable artifact from a protected CI/CD pipeline.</td></tr>
+        <tr><td>Running in production</td><td>Log, monitor, alert, patch, and test again.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout good">
+    <span class="label">The last word from the book</span>
+    <p>“Enough” security is risk-based, not perfect. You will not eliminate every vulnerability; you will build layers, make the safe path the easy path, and make sure that when something breaks, it breaks loudly and safely.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Summary notes for <strong>Alice &amp; Bob Learn Secure Coding</strong> (Tanya Janca, Wiley 2025). Figures are reproduced from the book for study purposes; captions are paraphrased explanations added here to make the diagrams readable on their own. Page references are to the PDF edition in this repository.</p>
+  </div>
+</footer>
+
+<button id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+<script>
+// reading progress
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const p = h.scrollTop / (h.scrollHeight - h.clientHeight) * 100;
+  bar.style.width = p + '%';
+}, {passive:true});
+
+// active TOC link
+const links = [...document.querySelectorAll('aside.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const io = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, {rootMargin: '-15% 0px -75% 0px'});
+secs.forEach(s => io.observe(s));
+
+// theme toggle
+const root = document.documentElement, btn = document.getElementById('theme');
+const saved = localStorage.getItem('notes-theme');
+if (saved) root.dataset.theme = saved;
+btn.addEventListener('click', () => {
+  const isDark = root.dataset.theme === 'dark' ||
+    (root.dataset.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.theme = isDark ? 'light' : 'dark';
+  localStorage.setItem('notes-theme', root.dataset.theme);
+});
+</script>
+</body>
+</html>
